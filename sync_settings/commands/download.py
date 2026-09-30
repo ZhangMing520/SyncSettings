@@ -46,7 +46,12 @@ class SyncSettingsDownloadCommand(sublime_plugin.WindowCommand):
                 http_proxy=settings.get('http_proxy'),
                 https_proxy=settings.get('https_proxy')
             ).get(settings.get('gist_id'))
-            files = g['files']
+            files = g.get('files')
+            if not files:
+                logger.warning('The gist `{}` contains no files.'.format(settings.get('gist_id')))
+                sublime.status_message('Sync Settings: the gist is empty or not found')
+                self._failed = True
+                return
 
             manager.fetch_files(files, self.temp_folder)
             file_content = manager.get_content(
@@ -64,13 +69,14 @@ class SyncSettingsDownloadCommand(sublime_plugin.WindowCommand):
                 self.window.run_command('advanced_install_package', {'packages': list(diff)})
             sublime.set_timeout(lambda: self.check_installation(diff, on_done=lambda: self.on_done(g)), 100)
         except Exception as e:
-            logger.exception(e)
-            sublime.message_dialog('Sync Settings:\n\n{}'.format(str(e)))
+            decorators.report_error(self, e)
 
     @decorators.check_settings('gist_id')
     def run(self):
+        self._failed = False
         ThreadProgress(
             target=self.download,
             message='downloading files',
-            success_message='files downloaded'
+            success_message='files downloaded',
+            success_when=lambda: not self._failed
         )

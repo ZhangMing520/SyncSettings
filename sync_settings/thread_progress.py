@@ -16,9 +16,12 @@ class ThreadProgress:
         The message to display next to the activity indicator
     """
 
-    def __init__(self, target, message, success_message=''):
+    def __init__(self, target, message, success_message='', success_when=None):
         self.message = message
         self.success_message = success_message
+        # Optional callable that returns False when the operation failed, so we
+        # don't show a misleading success message after an error.
+        self.success_when = success_when
         self.addend = 1
         self.size = 8
 
@@ -28,6 +31,8 @@ class ThreadProgress:
 
     def run(self, i):
         if not self.thread.is_alive():
+            if self.success_when is not None and not self.success_when():
+                return
             msg = '' if not self.success_message else 'Sync Settings: {}'.format(self.success_message)
             sublime.status_message(msg)
             return

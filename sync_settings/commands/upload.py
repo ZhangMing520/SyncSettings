@@ -7,13 +7,11 @@ from . import decorators
 from .. import sync_version as version, sync_manager as manager
 from ..libs import settings
 from ..libs import gist
-from ..libs.logger import logger
 from ..thread_progress import ThreadProgress
 
 
 class SyncSettingsUploadCommand(sublime_plugin.WindowCommand):
-    @staticmethod
-    def upload():
+    def upload(self):
         files = manager.get_files()
         if not len(files):
             sublime.status_message('Sync Settings: there are not files to upload')
@@ -41,13 +39,14 @@ class SyncSettingsUploadCommand(sublime_plugin.WindowCommand):
             )
             sublime.message_dialog(msg.format(str(e)))
         except Exception as e:
-            logger.exception(e)
-            sublime.message_dialog('Sync Settings:\n\n{}'.format(str(e)))
+            decorators.report_error(self, e)
 
     @decorators.check_settings('gist_id', 'access_token')
     def run(self):
+        self._failed = False
         ThreadProgress(
             target=self.upload,
             message='uploading files',
-            success_message='files uploaded'
+            success_message='files uploaded',
+            success_when=lambda: not self._failed
         )

@@ -4,6 +4,7 @@ from functools import wraps
 import sublime
 
 from ..libs import settings
+from ..libs.logger import logger
 
 
 def check_settings(*props):
@@ -25,3 +26,14 @@ def check_settings(*props):
             func(self, *args, **kwargs)
         return check_settings_inner
     return check_settings_wrapper
+
+
+def report_error(cmd, e):
+    """Log an unexpected error and surface it to the user.
+
+    Also marks the command as failed so ThreadProgress does not show a
+    misleading success message after an error.
+    """
+    logger.exception(e)
+    cmd._failed = True
+    sublime.message_dialog('Sync Settings:\n\n{}'.format(str(e)))

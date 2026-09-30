@@ -16,4 +16,11 @@ tests/options.json
 cover
 .coverage
 
+# Python development virtual environment (created locally, never committed)
+.venv/
+venv/
+
+# Test caches
+.pytest_cache/
+
 pyproject.toml

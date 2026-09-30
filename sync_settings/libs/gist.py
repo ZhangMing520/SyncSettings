@@ -87,13 +87,12 @@ class Gist:
         return self.__do_request('get', self.make_uri('{}/commits'.format(gid))).json()
 
     def __do_request(self, verb, url, **kwargs):
-        # @TODO add support for proxies
         try:
             response = getattr(requests, verb)(url, headers=self.headers, proxies=self.proxies, **kwargs)
-        except requests.exceptions.ConnectionError as e:
+        except requests.exceptions.RequestException as e:
             raise NetworkError('Can`t perform this action due to network errors. reason: {}'.format(str(e)))
         if response.status_code >= 300:
-            logger.warning(response.json())
+            logger.warning(response.text)
         if response.status_code == 404:
             raise NotFoundError('The requested gist do not exists, or the token has not enough permissions')
         if response.status_code in [401, 403]:
@@ -101,7 +100,7 @@ class Gist:
         if response.status_code == 422:
             raise UnprocessableDataError('The provided data has errors')
         if response.status_code >= 300:
-            raise UnexpectedError('Unexpected Error, Reason: {}'.format(response.json()['message']))
+            raise UnexpectedError('Unexpected Error, Reason: {}'.format(response.text))
 
         return response
 

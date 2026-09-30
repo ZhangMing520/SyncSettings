@@ -28,21 +28,36 @@ def get_content(file):
     return ''
 
 
+def _as_patterns(key):
+    """Return `excluded_files`/`included_files` as a list of patterns.
+
+    Users sometimes set these options to a single string instead of a list,
+    which used to crash with "'str' object has no attribute 'extend'". Be
+    tolerant: a string is treated as a single pattern, and we warn so the
+    misconfiguration is visible instead of failing silently.
+    """
+    patterns = settings.get(key) or []
+    if isinstance(patterns, str):
+        logger.warning(
+            "`{}` should be a list of patterns, but a string was given; "
+            "treating it as a single pattern.".format(key)
+        )
+        return [patterns]
+    return list(patterns)
+
+
 def should_exclude(file_name):
-    patterns = settings.get('excluded_files') or []
-    # copy list to avoid side effects
-    p = patterns[:]
-    # ignore SyncSettings.sublime-settings file to avoid not wanted changes
-    p.extend(['*SyncSettings.sublime-settings'])
-    for pattern in p:
+    patterns = _as_patterns('excluded_files')
+    # SyncSettings.sublime-settings is always excluded to avoid unwanted changes
+    patterns.extend(['*SyncSettings.sublime-settings'])
+    for pattern in patterns:
         if fnmatch(file_name, pattern):
             return True
     return False
 
 
 def should_include(file_name):
-    patterns = settings.get('included_files') or []
-    # copy list to avoid side effects
+    patterns = _as_patterns('included_files')
     for pattern in patterns:
         # ignore SyncSettings.sublime-settings file to avoid not wanted changes
         if fnmatch(file_name, '*SyncSettings.sublime-settings'):

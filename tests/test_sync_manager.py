@@ -46,6 +46,20 @@ class TestSyncManager(unittest.TestCase):
                 'comparing: {}'.format(test['file'])
             )
 
+    @mock.patch('sync_settings.libs.settings.get', mock.MagicMock(return_value='*.txt'))
+    def test_should_exclude_with_string_setting(self):
+        # regression for #200: a string setting must not crash and is
+        # treated as a single pattern
+        self.assertTrue(manager.should_exclude('foo.txt'))
+        self.assertFalse(manager.should_exclude('foo.py'))
+
+    @mock.patch('sync_settings.libs.settings.get', mock.MagicMock(return_value='*.txt'))
+    def test_should_include_with_string_setting(self):
+        # regression for #200: a string setting must not crash and is
+        # treated as a single pattern
+        self.assertTrue(manager.should_include('foo.txt'))
+        self.assertFalse(manager.should_include('foo.py'))
+
     @mock.patch('sync_settings.libs.settings.get', mock.MagicMock(return_value=[
         '*.sublime-settings',
         '*.txt',
