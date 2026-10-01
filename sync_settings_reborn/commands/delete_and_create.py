@@ -11,7 +11,7 @@ from ..thread_progress import ThreadProgress
 from .. import sync_version as version
 
 
-class SyncSettingsDeleteAndCreateCommand(sublime_plugin.WindowCommand):
+class SyncSettingsRebornDeleteAndCreateCommand(sublime_plugin.WindowCommand):
     def delete_and_create(self, should_create=False):
         gid = settings.get('gist_id')
         try:
@@ -24,10 +24,10 @@ class SyncSettingsDeleteAndCreateCommand(sublime_plugin.WindowCommand):
             # delete information related to the deleted gist
             version.update_config_file({})
             if should_create:
-                self.window.run_command('sync_settings_create_and_upload')
+                self.window.run_command('sync_settings_reborn_create_and_upload')
         except gist.NotFoundError as e:
             msg = (
-                'Sync Settings:\n\n'
+                'Sync Settings Reborn:\n\n'
                 '{}\n\n'
                 'Please check if the access token was created with the gist scope.\n\n'
                 'If the access token is correct, please, delete the value of `gist_id` property manually.'
@@ -39,7 +39,7 @@ class SyncSettingsDeleteAndCreateCommand(sublime_plugin.WindowCommand):
     @check_settings('gist_id', 'access_token')
     def run(self, create=True):
         dialog_message = (
-            'Sync Settings:\n\n'
+            'Sync Settings Reborn:\n\n'
             'This action will delete your remote backup, do you want to proceed with this action?\n\n'
             'Note: this action is irreversible'
         )

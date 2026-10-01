@@ -15,12 +15,12 @@ def check_settings(*props):
                 if not settings.get(prop):
                     prop_text = 'properties' if len(args) > 1 else 'property'
                     msg = (
-                        'Sync Settings:\n\n'
+                        'Sync Settings Reborn:\n\n'
                         'The {} {}, must be defined. Edit your settings file.'
                     )
                     sublime.message_dialog(msg.format(prop_text, ' and '.join(props)))
                     sublime.active_window().run_command('open_file', {
-                        'file': '${packages}/User/SyncSettings.sublime-settings'
+                        'file': '${packages}/User/SyncSettingsReborn.sublime-settings'
                     })
                     return
             func(self, *args, **kwargs)
@@ -36,4 +36,4 @@ def report_error(cmd, e):
     """
     logger.exception(e)
     cmd._failed = True
-    sublime.message_dialog('Sync Settings:\n\n{}'.format(str(e)))
+    sublime.message_dialog('Sync Settings Reborn:\n\n{}'.format(str(e)))

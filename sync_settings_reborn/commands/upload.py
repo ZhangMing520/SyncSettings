@@ -10,11 +10,11 @@ from ..libs import gist
 from ..thread_progress import ThreadProgress
 
 
-class SyncSettingsUploadCommand(sublime_plugin.WindowCommand):
+class SyncSettingsRebornUploadCommand(sublime_plugin.WindowCommand):
     def upload(self):
         files = manager.get_files()
         if not len(files):
-            sublime.status_message('Sync Settings: there are not files to upload')
+            sublime.status_message('Sync Settings Reborn: there are not files to upload')
             return
         try:
             g = gist.Gist(
@@ -32,7 +32,7 @@ class SyncSettingsUploadCommand(sublime_plugin.WindowCommand):
             })
         except gist.NotFoundError as e:
             msg = (
-                'Sync Settings:\n\n'
+                'Sync Settings Reborn:\n\n'
                 '{}\n\n'
                 'Please check if the access token was created with the gist scope.\n\n'
                 'If the access token is correct, please, delete the value of `gist_id` property manually.'

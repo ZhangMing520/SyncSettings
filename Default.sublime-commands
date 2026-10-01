@@ -1,36 +1,36 @@
 [
     {
-        "caption": "Sync Settings: Create and Upload",
-        "command": "sync_settings_create_and_upload"
+        "caption": "Sync Settings Reborn: Create and Upload",
+        "command": "sync_settings_reborn_create_and_upload"
     },
     {
-        "caption": "Sync Settings: Delete and Create",
-        "command": "sync_settings_delete_and_create"
+        "caption": "Sync Settings Reborn: Delete and Create",
+        "command": "sync_settings_reborn_delete_and_create"
     },
     {
-        "caption": "Sync Settings: Download",
-        "command": "sync_settings_download"
+        "caption": "Sync Settings Reborn: Download",
+        "command": "sync_settings_reborn_download"
     },
     {
-        "caption": "Sync Settings: Upload",
-        "command": "sync_settings_upload"
+        "caption": "Sync Settings Reborn: Upload",
+        "command": "sync_settings_reborn_upload"
     },
     {
-        "caption": "Sync Settings: Delete",
-        "command": "sync_settings_delete_and_create",
+        "caption": "Sync Settings Reborn: Delete",
+        "command": "sync_settings_reborn_delete_and_create",
         "args": {
             "create": false
         }
     },
     {
-        "caption": "Sync Settings: Show Logs",
-        "command": "sync_settings_open_logs"
+        "caption": "Sync Settings Reborn: Show Logs",
+        "command": "sync_settings_reborn_open_logs"
     },
     {
-        "caption": "Sync Settings: Edit User Settings",
+        "caption": "Sync Settings Reborn: Edit User Settings",
         "command": "open_file",
         "args": {
-            "file": "${packages}/User/SyncSettings.sublime-settings"
+            "file": "${packages}/User/SyncSettingsReborn.sublime-settings"
         }
     }
 ]

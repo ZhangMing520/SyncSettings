@@ -1,3 +1,11 @@
+# Sync Settings Reborn (maintained fork)
+
+> This is a community-maintained revival of the original **Sync Settings**
+> plugin, which is no longer updated (see the original author's UNMAINTAINED
+> note below). It is published on Package Control as **Sync Settings Reborn**
+> so it does not collide with the dead package. Old `gist_id` / `access_token`
+> settings are migrated automatically on first run.
+
 # UNMAINTAINED
 
 Sadly, I won't able to continue with the development of SyncSettings, it will be available on package control registry but won't receive new changes.
@@ -11,7 +19,7 @@ Marcelo
 
 ---
 
-# Sync Settings
+# Sync Settings Reborn
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
 [![All Contributors](https://img.shields.io/badge/all_contributors-6-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
@@ -29,26 +37,26 @@ Marcelo
 <br />
 <br />
 
-With [Sync Settings](https://packagecontrol.io/packages/Sync%20Settings), you are able to synchronize your [Sublime Text](http://sublimetext.com/) settings among multiple devices, and keep them updated.
+With [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings), you are able to synchronize your [Sublime Text](http://sublimetext.com/) settings among multiple devices, and keep them updated.
 
-Being powered by GitHub-Gists, [Sync Settings](https://packagecontrol.io/packages/Sync%20Settings) provides you a reliable cross-platform solution to keep your backups secure.
+Being powered by GitHub-Gists, [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings) provides you a reliable cross-platform solution to keep your backups secure.
 
-Please, follow the steps below to getting started with [Sync Settings](https://packagecontrol.io/packages/Sync%20Settings).
+Please, follow the steps below to getting started with [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings).
 
-> [Sync Settings](https://packagecontrol.io/packages/Sync%20Settings) works on Windows, Linux, macOS and [Sublime Text 3](http://sublimetext.com/3).
+> [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings) works on Windows, Linux, macOS and [Sublime Text 3](http://sublimetext.com/3).
 
 
 ## Getting Started
 
-1. Run `Package Control: Install Package` command, and looks for [Sync Settings](https://packagecontrol.io/packages/Sync%20Settings)
-2. Run `Sync Settings: Edit User Settings`
+1. Run `Package Control: Install Package` command, and looks for [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings)
+2. Run `Sync Settings Reborn: Edit User Settings`
 3. **if** *Do you already have a gist?*
     1. Copy `gist id` and put it in config file (`https://gist.github.com/<username>/<gist id>`) (`gist_id` property)
-    2. Run `Sync Settings: Download` command to retrieve your backup.
+    2. Run `Sync Settings Reborn: Download` command to retrieve your backup.
 4. **else**
     1. Create an access token [here](https://github.com/settings/tokens/new) with `gist` scope checked.
     2. Put the token in the config file (`access_token` property)
-    3. Run `Sync Settings: Create and Upload` command
+    3. Run `Sync Settings Reborn: Create and Upload` command
     
 ### File Format
 
@@ -67,7 +75,7 @@ By default, this plugin operates over [Sublime Text](https://www.sublimetext.com
 
 | name | type | description |
 |---|---|---|
-| `access_token`  | `string` | Brings write permission to [Sync Settings](https://packagecontrol.io/packages/Sync%20Settings) over your gists (edit, delete and create). *(This option is not required, if you only want to download your backups)* | 
+| `access_token`  | `string` | Brings write permission to [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings) over your gists (edit, delete and create). *(This option is not required, if you only want to download your backups)* | 
 | `gist_id`  | `string` | Identifier of your backup on [gist.github.com](https://gist.github.com). |
 | `auto_upgrade`  | `boolean` | If is `true`, your settings will be synced with the latest settings on [gist.github.com](https://gist.github.com) when [Sublime Text](https://www.sublimetext.com) startup |
 | `http_proxy`  | `string` | An HTTP proxy server to use for requests. |
@@ -82,13 +90,13 @@ By default, this plugin operates over [Sublime Text](https://www.sublimetext.com
 
 | command | description |
 |---|---|
-|**Sync Settings: Create and Upload**|Creates a new backup on `gist.github.com` from your local files|
-|**Sync Settings: Delete and Create**|Deletes the remote reference of your gist and then, creates a new backup from your local files to `gist.github.com`|
-|**Sync Settings: Upload**|Upload a backup from your local files to `gist.github.com`|
-|**Sync Settings: Download**|Retrieves the latest version of your backup, using as reference the `gist_id` property defined in your settings file.|
-|**Sync Settings: Delete**|Deletes the remote version of your gist, using as reference the `gist_id` property defined in your settings file. (This action is irreversible)|
-|**Sync Settings: Show Logs**|Open a new view, with `Sync Settings` log file|
-|**Sync Settings: Edit User Settings**|Open a new view, with `Sync Settings` user settings.|
+|**Sync Settings Reborn: Create and Upload**|Creates a new backup on `gist.github.com` from your local files|
+|**Sync Settings Reborn: Delete and Create**|Deletes the remote reference of your gist and then, creates a new backup from your local files to `gist.github.com`|
+|**Sync Settings Reborn: Upload**|Upload a backup from your local files to `gist.github.com`|
+|**Sync Settings Reborn: Download**|Retrieves the latest version of your backup, using as reference the `gist_id` property defined in your settings file.|
+|**Sync Settings Reborn: Delete**|Deletes the remote version of your gist, using as reference the `gist_id` property defined in your settings file. (This action is irreversible)|
+|**Sync Settings Reborn: Show Logs**|Open a new view, with `Sync Settings Reborn` log file|
+|**Sync Settings Reborn: Edit User Settings**|Open a new view, with `Sync Settings Reborn` user settings.|
 
 ## Contributors
 
@@ -114,7 +122,7 @@ Thank you for contribute to this project:
 
 ## Issues
 
-If you are experimenting an error, or an unusual behavior. Please let me know,  creating a [new issue](https://github.com/mfuentesg/SyncSettings/issues/new) appending the logs provided by the  `Sync Settings: Show logs` command.
+If you are experimenting an error, or an unusual behavior. Please let me know,  creating a [new issue](https://github.com/mfuentesg/SyncSettings/issues/new) appending the logs provided by the  `Sync Settings Reborn: Show logs` command.
 
 ## Development
 
@@ -138,7 +146,7 @@ $ pipenv run nosetests tests
 
 ## License
 
-Sync Settings is licensed under the MIT license along with all source code.
+Sync Settings Reborn is licensed under the MIT license along with all source code.
 
 ```
 Copyright (c) since 2015, Marcelo Fuentes <marceloe.fuentes@gmail.com>.

@@ -8,15 +8,15 @@ if sys.version_info >= (3,):
     import zipimport
 
 st_build = int(sublime.version())
-mod_prefix = 'sync_settings'
+mod_prefix = 'sync_settings_reborn'
 bare_mod_prefix = mod_prefix
 
 # ST3 loads each package as a module, so it needs an extra prefix
 if sys.version_info >= (3,):
-    mod_prefix = 'SyncSettings.' + mod_prefix
+    mod_prefix = 'SyncSettingsReborn.' + mod_prefix
     from imp import reload
 
-# When reloading the package, we also need to reload the base "sync_settings"
+# When reloading the package, we also need to reload the base "sync_settings_reborn"
 # module in ST3. This flag indicates we should re-add the PC package path
 # to the beginning of sys.path before we try to reload.
 do_insert = False
@@ -49,13 +49,13 @@ if commands_name in sys.modules and sys.version_info >= (3,) and st_build < 3112
 #
 # Thus is module A depends on B and we don't reload B before A, when A is reloaded
 # it will still have a reference to the old B. Thus we hard-code the dependency
-# order of the various SyncSettings modules so they get reloaded properly.
+# order of the various SyncSettingsReborn modules so they get reloaded properly.
 #
 # There are solutions for doing this all programmatically, but this is much easier
 # to understand.
 reload_mods = []
 for mod in sys.modules:
-    if mod.startswith(('sync_settings', 'SyncSettings')) and sys.modules[mod] is not None:
+    if mod.startswith(('sync_settings_reborn', 'SyncSettingsReborn')) and sys.modules[mod] is not None:
         reload_mods.append(mod)
 
 mods_load_order = [

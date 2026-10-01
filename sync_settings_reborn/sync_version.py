@@ -6,7 +6,7 @@ import os
 from .libs.gist import Gist
 from .libs import settings, path, file
 
-file_path = path.join(os.path.expanduser('~'), '.sync_settings', 'sync.json')
+file_path = path.join(os.path.expanduser('~'), '.sync_settings_reborn', 'sync.json')
 
 
 def get_local_version():
@@ -42,7 +42,7 @@ def update_config_file(info):
 
 def show_update_dialog(on_yes=None):
     msg = (
-        'Sync Settings:\n\n'
+        'Sync Settings Reborn:\n\n'
         'Your settings seem out of date.\n\n'
         'Do you want to download the latest version?'
     )

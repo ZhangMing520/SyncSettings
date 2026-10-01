@@ -14,8 +14,8 @@ from ..libs.logger import logger
 from ..thread_progress import ThreadProgress
 
 
-class SyncSettingsDownloadCommand(sublime_plugin.WindowCommand):
-    temp_folder = path.join(os.path.expanduser('~'), '.sync_settings', 'temp')
+class SyncSettingsRebornDownloadCommand(sublime_plugin.WindowCommand):
+    temp_folder = path.join(os.path.expanduser('~'), '.sync_settings_reborn', 'temp')
 
     def check_installation(self, packages, on_done=None):
         package_settings = sublime.load_settings('Package Control.sublime-settings').get('installed_packages')
@@ -49,7 +49,7 @@ class SyncSettingsDownloadCommand(sublime_plugin.WindowCommand):
             files = g.get('files')
             if not files:
                 logger.warning('The gist `{}` contains no files.'.format(settings.get('gist_id')))
-                sublime.status_message('Sync Settings: the gist is empty or not found')
+                sublime.status_message('Sync Settings Reborn: the gist is empty or not found')
                 self._failed = True
                 return
 
@@ -63,7 +63,7 @@ class SyncSettingsDownloadCommand(sublime_plugin.WindowCommand):
             setting = 'installed_packages'
             if setting not in package_settings:
                 package_settings[setting] = []
-            package_settings[setting].append('Sync Settings')
+            package_settings[setting].append('Sync Settings Reborn')
             diff = set(package_settings.get(setting)).difference(set(local_settings.get(setting)))
             if len(diff) > 0:
                 self.window.run_command('advanced_install_package', {'packages': list(diff)})

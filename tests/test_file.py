@@ -2,7 +2,7 @@
 
 import unittest
 
-from sync_settings.libs import file
+from sync_settings_reborn.libs import file
 
 
 class TestJSON(unittest.TestCase):

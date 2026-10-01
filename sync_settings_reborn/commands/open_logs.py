@@ -6,9 +6,9 @@ import sublime_plugin
 from ..libs import path
 
 
-class SyncSettingsOpenLogsCommand(sublime_plugin.WindowCommand):
+class SyncSettingsRebornOpenLogsCommand(sublime_plugin.WindowCommand):
     def run(self):
-        filename = os.path.join(os.path.expanduser('~'), '.sync_settings', 'sync.log')
+        filename = os.path.join(os.path.expanduser('~'), '.sync_settings_reborn', 'sync.log')
         if not path.exists(filename):
             with open(filename, 'a'):
                 pass

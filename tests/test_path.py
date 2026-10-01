@@ -3,7 +3,7 @@ import unittest
 import os
 import mock
 import shutil
-from sync_settings.libs import path
+from sync_settings_reborn.libs import path
 
 
 class TestPath(unittest.TestCase):

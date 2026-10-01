@@ -3,7 +3,7 @@
 import logging
 import unittest
 
-from sync_settings.libs import logger
+from sync_settings_reborn.libs import logger
 
 
 class TestLogger(unittest.TestCase):

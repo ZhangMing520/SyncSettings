@@ -48,8 +48,8 @@ def _as_patterns(key):
 
 def should_exclude(file_name):
     patterns = _as_patterns('excluded_files')
-    # SyncSettings.sublime-settings is always excluded to avoid unwanted changes
-    patterns.extend(['*SyncSettings.sublime-settings'])
+    # SyncSettingsReborn.sublime-settings is always excluded to avoid unwanted changes
+    patterns.extend(['*SyncSettingsReborn.sublime-settings'])
     for pattern in patterns:
         if fnmatch(file_name, pattern):
             return True
@@ -59,8 +59,8 @@ def should_exclude(file_name):
 def should_include(file_name):
     patterns = _as_patterns('included_files')
     for pattern in patterns:
-        # ignore SyncSettings.sublime-settings file to avoid not wanted changes
-        if fnmatch(file_name, '*SyncSettings.sublime-settings'):
+        # ignore SyncSettingsReborn.sublime-settings file to avoid not wanted changes
+        if fnmatch(file_name, '*SyncSettingsReborn.sublime-settings'):
             return False
         if fnmatch(file_name, pattern):
             return True

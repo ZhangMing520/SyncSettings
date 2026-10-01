@@ -3,7 +3,7 @@
 import unittest
 import mock
 import os
-from sync_settings import sync_manager as manager
+from sync_settings_reborn import sync_manager as manager
 
 
 def create_file(file, mode='w', content=None):
@@ -19,7 +19,7 @@ def delete_file(file):
 
 
 class TestSyncManager(unittest.TestCase):
-    @mock.patch('sync_settings.libs.settings.get', mock.MagicMock(return_value=[
+    @mock.patch('sync_settings_reborn.libs.settings.get', mock.MagicMock(return_value=[
         '*Package Control.sublime-settings',
         '*.txt',
         'foo/**/*.py',
@@ -35,7 +35,7 @@ class TestSyncManager(unittest.TestCase):
             {'file': 'foo/bar/file.py', 'expected': True},
             {'file': 'bar/README.md', 'expected': True},
             {'file': '/a/long/path/file.txt', 'expected': True},
-            {'file': '/User/Settings/SyncSettings.sublime-settings', 'expected': True},
+            {'file': '/User/Settings/SyncSettingsReborn.sublime-settings', 'expected': True},
             {'file': '/User/Settings/Package Control.sublime-settings', 'expected': True},
         ]
 
@@ -46,21 +46,21 @@ class TestSyncManager(unittest.TestCase):
                 'comparing: {}'.format(test['file'])
             )
 
-    @mock.patch('sync_settings.libs.settings.get', mock.MagicMock(return_value='*.txt'))
+    @mock.patch('sync_settings_reborn.libs.settings.get', mock.MagicMock(return_value='*.txt'))
     def test_should_exclude_with_string_setting(self):
         # regression for #200: a string setting must not crash and is
         # treated as a single pattern
         self.assertTrue(manager.should_exclude('foo.txt'))
         self.assertFalse(manager.should_exclude('foo.py'))
 
-    @mock.patch('sync_settings.libs.settings.get', mock.MagicMock(return_value='*.txt'))
+    @mock.patch('sync_settings_reborn.libs.settings.get', mock.MagicMock(return_value='*.txt'))
     def test_should_include_with_string_setting(self):
         # regression for #200: a string setting must not crash and is
         # treated as a single pattern
         self.assertTrue(manager.should_include('foo.txt'))
         self.assertFalse(manager.should_include('foo.py'))
 
-    @mock.patch('sync_settings.libs.settings.get', mock.MagicMock(return_value=[
+    @mock.patch('sync_settings_reborn.libs.settings.get', mock.MagicMock(return_value=[
         '*.sublime-settings',
         '*.txt',
     ]))
@@ -74,7 +74,7 @@ class TestSyncManager(unittest.TestCase):
             {'file': 'foo/bar/file.py', 'expected': False},
             {'file': 'bar/README.md', 'expected': False},
             {'file': '/a/long/path/file.txt', 'expected': True},
-            {'file': '/User/Settings/SyncSettings.sublime-settings', 'expected': False},
+            {'file': '/User/Settings/SyncSettingsReborn.sublime-settings', 'expected': False},
             {'file': '/User/Settings/Package Control.sublime-settings', 'expected': True},
         ]
 
@@ -101,6 +101,6 @@ class TestSyncManager(unittest.TestCase):
         delete_file('empty.txt')
         delete_file('plain.txt')
 
-    @mock.patch('sync_settings.sync_manager.path.exists', mock.MagicMock(return_value=True))
+    @mock.patch('sync_settings_reborn.sync_manager.path.exists', mock.MagicMock(return_value=True))
     def test_get_content_with_exception(self):
         self.assertEqual(manager.get_content('file.error'), '')

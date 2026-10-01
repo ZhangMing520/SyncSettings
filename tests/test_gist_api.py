@@ -2,7 +2,7 @@ import unittest
 import requests
 import json
 import os
-from sync_settings.libs import gist, path
+from sync_settings_reborn.libs import gist, path
 
 from unittest import mock
 

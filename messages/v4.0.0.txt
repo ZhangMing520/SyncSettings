@@ -1,0 +1,41 @@
+Sync Settings Reborn
+
+This is a maintained revival of the original "Sync Settings" plugin
+(https://github.com/mfuentesg/SyncSettings), which is no longer updated.
+
+What changed in this release
+
+- The package was renamed to "Sync Settings Reborn" so it can coexist with
+  (and eventually replace) the unmaintained original on Package Control.
+- All internal identifiers were renamed (commands are now
+  `sync_settings_reborn_*`, the settings file is
+  `SyncSettingsReborn.sublime-settings`), so it will not conflict with the
+  old package.
+
+Automatic migration
+
+- On first run, your existing `gist_id` and `access_token` (and proxy /
+  include-exclude settings) are copied automatically from the old
+  `SyncSettings.sublime-settings` file. You should not need to re-enter them.
+- After confirming the migration works, you may safely uninstall the old
+  "Sync Settings" package.
+
+Notable fixes in this release
+
+- Fixed the plugin failing to load because Package Control did not install
+  `requests`' transitive dependencies (urllib3, idna, certifi,
+  charset_normalizer). These are now declared explicitly.
+- Fixed silent failures / empty logs: errors are now written to
+  `~/.sync_settings_reborn/sync.log` and surfaced to the user instead of
+  being swallowed.
+- Fixed a crash when `excluded_files` / `included_files` were set to a string
+  instead of a list.
+
+Getting started
+
+1. Run `Sync Settings Reborn: Edit User Settings`
+2. If you already have a gist, set `gist_id` and run `Sync Settings Reborn: Download`.
+   Otherwise create a GitHub token with the `gist` scope, set `access_token`,
+   and run `Sync Settings Reborn: Create and Upload`.
+
+Report issues at: https://github.com/ZhangMing520/SyncSettings/issues

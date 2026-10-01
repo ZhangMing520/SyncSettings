@@ -1,3 +1,21 @@
+## v4.0.0 — Sync Settings Reborn
+
+Maintained revival of the unmaintained original package, published under a new
+name so it can coexist with (and replace) the dead package on Package Control.
+
+- Renamed package to `Sync Settings Reborn` (commands `sync_settings_reborn_*`,
+  settings file `SyncSettingsReborn.sublime-settings`).
+- Automatic migration of `gist_id` / `access_token` / proxy / include-exclude
+  settings from the old `SyncSettings.sublime-settings` on first run.
+- Fixed plugin failing to load: `requests` transitive dependencies
+  (urllib3, idna, certifi, charset_normalizer) are now declared in
+  `dependencies.json`.
+- Fixed silent failures / empty logs: errors are written to
+  `~/.sync_settings_reborn/sync.log` and surfaced to the user; unified network
+  error handling (SSL / timeout / proxy / server errors).
+- Fixed crash when `excluded_files` / `included_files` were set to a string
+  instead of a list (#200).
+
 ## v3.2.0
 
 This version deprecates sublime text v2 and includes minor improvements.
@@ -49,13 +67,13 @@ https://github.com/mfuentesg/SyncSettings/issues/87
 
 ## v3.0.0
 
-I am happy to announce a new version of Sync Settings.
+I am happy to announce a new version of Sync Settings Reborn.
 This version includes a lot of improvements and bug fixes
 
-In the previous version of `Sync Settings`, all files are replaced automatically once completed the download,
+In the previous version of `Sync Settings Reborn`, all files are replaced automatically once completed the download,
 causing errors like infinite sublime text alerts when a dependency is not installed in your computer.
 
-In this version, Sync Settings will use `Package Control` commands, to ensure the installation of your packages,
+In this version, Sync Settings Reborn will use `Package Control` commands, to ensure the installation of your packages,
 before to update `Preferences.sublime-settings` and `Package Control.sublime-settings` files.
 
 
@@ -70,7 +88,7 @@ Improvements:
 
 Bug fixes:
 
-- Exclude `SyncSettings.sublime-settings` on sync (https://github.com/mfuentesg/SyncSettings/issues/80)
+- Exclude `SyncSettingsReborn.sublime-settings` on sync (https://github.com/mfuentesg/SyncSettings/issues/80)
 - Fix files priority (https://github.com/mfuentesg/SyncSettings/issues/82)
 - Colour scheme needs to load first (https://github.com/mfuentesg/SyncSettings/issues/90)
 - Fix utf-8 error (https://github.com/mfuentesg/SyncSettings/issues/83)
@@ -94,15 +112,15 @@ Solved issues:
 
 ## 2.4.0
 
-- Rename cache file from `.sync_settings_cache` to `.sync-settings.cache` (~/.sync_settings_cache)
-- New Command `Sync Settings: Edit User Settings` by @JohaWeber
+- Rename cache file from `.sync_settings_reborn_cache` to `.sync-settings.cache` (~/.sync_settings_reborn_reborn_cache)
+- New Command `Sync Settings Reborn: Edit User Settings` by @JohaWeber
 - Bug Logging was improved
 
 Issues:
 - Remove SyncSettings references from download process (https://github.com/mfuentesg/SyncSettings/issues/50)
 - Download doesn't work and clears Gist ID (https://github.com/mfuentesg/SyncSettings/issues/46)
 - downloading append a newline in configfile (https://github.com/mfuentesg/SyncSettings/issues/45)
-- sync_settings_cache links to wrong directory (https://github.com/mfuentesg/SyncSettings/issues/42)
+- sync_settings_reborn_cache links to wrong directory (https://github.com/mfuentesg/SyncSettings/issues/42)
 
 ## 2.3.1
 

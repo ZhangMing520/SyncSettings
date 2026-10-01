@@ -10,12 +10,12 @@
                 "id": "package-settings",
                 "children": [
                     {
-                        "caption": "Sync Settings",
+                        "caption": "Sync Settings Reborn",
                         "children": [
                             {
                                 "command": "edit_settings",
                                 "args": {
-                                    "base_file": "${packages}/Sync Settings/SyncSettings.sublime-settings"
+                                    "base_file": "${packages}/Sync Settings Reborn/SyncSettingsReborn.sublime-settings"
                                 },
                                 "caption": "Settings"
                             },
@@ -23,31 +23,31 @@
                                 "caption": "-"
                             },
                             {
-                                "caption": "Sync Settings: Create and Upload",
-                                "command": "sync_settings_create_and_upload"
+                                "caption": "Sync Settings Reborn: Create and Upload",
+                                "command": "sync_settings_reborn_create_and_upload"
                             },
                             {
-                                "caption": "Sync Settings: Delete and Create",
-                                "command": "sync_settings_delete_and_create"
+                                "caption": "Sync Settings Reborn: Delete and Create",
+                                "command": "sync_settings_reborn_delete_and_create"
                             },
                             {
-                                "caption": "Sync Settings: Download",
-                                "command": "sync_settings_download"
+                                "caption": "Sync Settings Reborn: Download",
+                                "command": "sync_settings_reborn_download"
                             },
                             {
-                                "caption": "Sync Settings: Upload",
-                                "command": "sync_settings_upload"
+                                "caption": "Sync Settings Reborn: Upload",
+                                "command": "sync_settings_reborn_upload"
                             },
                             {
-                                "caption": "Sync Settings: Delete",
-                                "command": "sync_settings_delete_and_create",
+                                "caption": "Sync Settings Reborn: Delete",
+                                "command": "sync_settings_reborn_delete_and_create",
                                 "args": {
                                     "create": false
                                 }
                             },
                             {
-                                "caption": "Sync Settings: Show Logs",
-                                "command": "sync_settings_open_logs"
+                                "caption": "Sync Settings Reborn: Show Logs",
+                                "command": "sync_settings_reborn_open_logs"
                             }
                         ]
                     }

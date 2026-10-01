@@ -4,14 +4,14 @@ import logging
 import os
 from os import path
 
-log_dir = path.join(path.expanduser('~'), '.sync_settings')
+log_dir = path.join(path.expanduser('~'), '.sync_settings_reborn')
 log_file = path.join(log_dir, 'sync.log')
 
 # Make sure the directory exists so the file handler can be created even if the
 # plugin host hasn't created it yet.
 os.makedirs(log_dir, exist_ok=True)
 
-logger = logging.getLogger('SyncSettings')
+logger = logging.getLogger('SyncSettingsReborn')
 logger.setLevel(logging.DEBUG)
 
 # Attach a file handler explicitly instead of relying on logging.basicConfig.

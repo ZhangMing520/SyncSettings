@@ -1,6 +1,6 @@
 import unittest
 import mock
-from sync_settings.libs import settings
+from sync_settings_reborn.libs import settings
 
 
 class TestSettings(unittest.TestCase):

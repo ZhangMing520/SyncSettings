@@ -5,7 +5,7 @@ from unittest import mock
 
 import requests as real_requests
 
-from sync_settings.libs import gist
+from sync_settings_reborn.libs import gist
 
 
 class TestRequestErrors(unittest.TestCase):
@@ -13,7 +13,7 @@ class TestRequestErrors(unittest.TestCase):
         self.api = gist.Gist(token='token', http_proxy='', https_proxy='')
 
     def _mock_requests(self):
-        patcher = mock.patch('sync_settings.libs.gist.requests')
+        patcher = mock.patch('sync_settings_reborn.libs.gist.requests')
         m = patcher.start()
         m.exceptions = real_requests.exceptions
         self.addCleanup(patcher.stop)
