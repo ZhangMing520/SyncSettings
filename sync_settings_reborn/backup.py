@@ -60,8 +60,11 @@ def read_backup_zip(source_path):
 
 def write_backup_zip(target_path, files):
     with zipfile.ZipFile(target_path, 'w', zipfile.ZIP_DEFLATED) as z:
+        # Keys are already raw relative paths (see collect_files); writing them
+        # verbatim keeps filenames human-readable and avoids corrupting any
+        # literal `%XX` sequences a file name might contain.
         for name, data in files.items():
-            z.writestr(path.decode(name), data)
+            z.writestr(name, data)
 
 
 def create_backup_zip(target_path, packages_only=False):

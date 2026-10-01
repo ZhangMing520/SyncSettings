@@ -18,10 +18,23 @@ _MIGRATE_KEYS = (
     'included_files',
 )
 
+# Loaded Settings objects are cached so the per-file exclude/include checks in
+# sync_manager don't call into sublime.load_settings repeatedly. The objects are
+# live (Sublime keeps them in sync with disk), so no value staleness.
+_cache = {}
+
+
+def _load_cached(filename):
+    cached = _cache.get(filename)
+    if cached is None:
+        cached = sublime.load_settings(filename)
+        _cache[filename] = cached
+    return cached
+
 
 def migrate_legacy():
-    new = sublime.load_settings(filename)
-    legacy = sublime.load_settings(LEGACY_FILENAME)
+    new = _load_cached(filename)
+    legacy = _load_cached(LEGACY_FILENAME)
     migrated = False
     for key in _MIGRATE_KEYS:
         legacy_val = legacy.get(key)
@@ -39,9 +52,9 @@ def save():
 
 
 def update(key, value):
-    sublime.load_settings(filename).set(key, value)
+    _load_cached(filename).set(key, value)
     save()
 
 
 def get(key):
-    return sublime.load_settings(filename).get(key)
+    return _load_cached(filename).get(key)

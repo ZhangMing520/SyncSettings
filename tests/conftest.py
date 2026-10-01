@@ -62,3 +62,21 @@ sublime.save_settings = save_settings
 sublime.yes_no_cancel_dialog = yes_no_cancel_dialog
 
 sys.modules['sublime'] = sublime
+
+
+# sublime_plugin is another Sublime built-in (provides WindowCommand, TextCommand,
+# etc.). Command modules import it at module level, so stub it for the suite.
+sublime_plugin = types.ModuleType('sublime_plugin')
+
+
+class WindowCommand:
+    pass
+
+
+class TextCommand:
+    pass
+
+
+sublime_plugin.WindowCommand = WindowCommand
+sublime_plugin.TextCommand = TextCommand
+sys.modules['sublime_plugin'] = sublime_plugin

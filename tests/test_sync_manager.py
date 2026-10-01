@@ -177,3 +177,25 @@ class WriteUserFilesTest(unittest.TestCase):
         manager.write_user_files({'Preferences.sublime-settings': b'{"x": 1}'}, preserve_packages=True)
         with open(os.path.join(self.user, 'Preferences.sublime-settings')) as f:
             self.assertEqual(json.load(f), {'x': 1})
+
+    def test_write_user_files_local_packages_none(self):
+        local_settings = mock.MagicMock()
+        local_settings.get.return_value = None
+        with mock.patch.object(manager.sublime, 'load_settings', return_value=local_settings):
+            manager.write_user_files(
+                {'Package%20Control.sublime-settings': json.dumps(
+                    {'installed_packages': ['A', 'B']}).encode()},
+                preserve_packages=True,
+            )
+        self.assertEqual(self._read_pc()['installed_packages'], ['A', 'B'])
+
+    def test_write_user_files_local_packages_non_list(self):
+        local_settings = mock.MagicMock()
+        local_settings.get.return_value = 'not a list'
+        with mock.patch.object(manager.sublime, 'load_settings', return_value=local_settings):
+            manager.write_user_files(
+                {'Package%20Control.sublime-settings': json.dumps(
+                    {'installed_packages': ['A', 'B']}).encode()},
+                preserve_packages=True,
+            )
+        self.assertEqual(self._read_pc()['installed_packages'], ['A', 'B'])

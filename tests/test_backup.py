@@ -18,6 +18,15 @@ def _write_user(root, rel, content):
         f.write(content)
 
 
+def _settings_side_effect(ignore_dirs=None, excluded_files=None, included_files=None):
+    table = {
+        'ignore_dirs': ignore_dirs,
+        'excluded_files': excluded_files,
+        'included_files': included_files,
+    }
+    return mock.MagicMock(side_effect=lambda key: table.get(key))
+
+
 class BackupZipTest(unittest.TestCase):
 
     def setUp(self):
@@ -99,3 +108,31 @@ class BackupZipTest(unittest.TestCase):
             f.write(b'not a zip')
         with self.assertRaises(ValueError):
             backup.read_backup_zip(bad)
+
+    def test_restore_rejects_path_traversal(self):
+        # A foreign/malicious zip must not be able to write outside Packages/User.
+        evil = os.path.join(self.tmp, 'evil.zip')
+        with zipfile.ZipFile(evil, 'w') as z:
+            z.writestr('../evil.txt', b'pwned')
+            z.writestr('Preferences.sublime-settings', b'{"x": 1}')
+        backup.restore_backup_zip(evil, preserve_packages=False)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, 'evil.txt')))
+        self.assertTrue(os.path.exists(os.path.join(self.user, 'Preferences.sublime-settings')))
+
+    def test_restore_skips_token_file(self):
+        # A backup that contains the token file must not overwrite the local one.
+        _write_user(self.user, 'SyncSettingsReborn.sublime-settings', b'{"access_token": "ORIGINAL"}')
+        withzip = os.path.join(self.tmp, 'withtoken.zip')
+        with zipfile.ZipFile(withzip, 'w') as z:
+            z.writestr('SyncSettingsReborn.sublime-settings', b'{"access_token": "HACKED"}')
+        backup.restore_backup_zip(withzip, preserve_packages=False)
+        with open(os.path.join(self.user, 'SyncSettingsReborn.sublime-settings'), 'rb') as f:
+            self.assertEqual(f.read(), b'{"access_token": "ORIGINAL"}')
+
+    @mock.patch.object(backup.manager.settings, 'get', _settings_side_effect(['IgnoredDir'], None))
+    def test_collect_files_respects_ignore_dirs(self):
+        _write_user(self.user, 'IgnoredDir/secret.py', b'x')
+        _write_user(self.user, 'Kept/ok.py', b'y')
+        files = backup.collect_files()
+        self.assertNotIn('IgnoredDir/secret.py', files)
+        self.assertIn('Kept/ok.py', files)

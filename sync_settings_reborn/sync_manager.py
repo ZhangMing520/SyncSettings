@@ -47,32 +47,42 @@ def _as_patterns(key):
     return list(patterns)
 
 
+def _is_token(file_name):
+    """True for the file that holds the Gist access_token.
+
+    Compared case-insensitively so the token can never be backed up or restored
+    on any platform (fnmatch is case-sensitive on Linux).
+    """
+    return os.path.basename(file_name).lower() == settings.filename.lower()
+
+
 def should_exclude(file_name):
+    if _is_token(file_name):
+        return True
+    basename = os.path.basename(file_name)
     patterns = _as_patterns('excluded_files')
-    # SyncSettingsReborn.sublime-settings is always excluded to avoid unwanted changes
-    # (it holds the access_token, so it must never be backed up or restored)
-    patterns.extend(['*SyncSettingsReborn.sublime-settings'])
     dir_patterns = _as_patterns('ignore_dirs')
     if dir_patterns:
         decoded = path.decode(file_name)
-        parts = [p for p in decoded.split(path.separator()) if p]
+        # Match only directory components, never the file name itself, so a file
+        # coincidentally named like an ignored directory is not excluded.
+        dir_parts = [p for p in decoded.split(path.separator()) if p][:-1]
         for pattern in dir_patterns:
-            if any(fnmatch(part, pattern) for part in parts):
+            if any(fnmatch(part, pattern) for part in dir_parts):
                 return True
-    for pattern in patterns:
-        if fnmatch(file_name, pattern):
-            return True
-    return False
+    return _matches(patterns, file_name, basename)
+
+
+def _matches(patterns, name, basename):
+    return any(fnmatch(name, p) or fnmatch(basename, p) for p in patterns)
 
 
 def should_include(file_name):
+    if _is_token(file_name):
+        return False
+    basename = os.path.basename(file_name)
     patterns = _as_patterns('included_files')
-    for pattern in patterns:
-        if fnmatch(file_name, '*SyncSettingsReborn.sublime-settings'):
-            return False
-        if fnmatch(file_name, pattern):
-            return True
-    return False
+    return _matches(patterns, file_name, basename)
 
 
 def is_synced(file_name):
@@ -139,8 +149,18 @@ def fetch_files(files, to=''):
     rq.join()
 
 
-def _write_one(user_path, name, data):
+def _is_within(user_real, target):
+    target_real = os.path.realpath(target)
+    return target_real == user_real or target_real.startswith(user_real + os.sep)
+
+
+def _write_one(user_path, user_real, name, data):
     target = path.join(user_path, path.decode(name))
+    # Guard against path traversal (e.g. a zip entry like `../../.bashrc`): never
+    # write outside Packages/User, even for foreign or malicious backups.
+    if not _is_within(user_real, target):
+        logger.warning('refusing to write outside Packages/User: {}'.format(target))
+        return
     os.makedirs(os.path.dirname(target), exist_ok=True)
     mode = 'wb' if isinstance(data, (bytes, bytearray)) else 'w'
     with open(target, mode) as f:
@@ -175,19 +195,24 @@ def write_user_files(files, preserve_packages=True):
     is merged with the local `installed_packages` instead of overwriting it.
     """
     user_path = path.join(sublime.packages_path(), 'User')
+    user_real = os.path.realpath(user_path)
     deferred = {}
     for key, data in files.items():
         name = path.decode(key)
+        # Defense in depth: never let a foreign backup clobber the access token.
+        if _is_token(name):
+            logger.warning('skipping token file in backup: {}'.format(name))
+            continue
         if name.endswith('Preferences.sublime-settings') or name.endswith('Package Control.sublime-settings'):
             deferred[key] = data
             continue
-        _write_one(user_path, key, data)
+        _write_one(user_path, user_real, key, data)
 
     for key, data in deferred.items():
         name = path.decode(key)
         if name.endswith('Package Control.sublime-settings') and preserve_packages:
             data = _merge_installed_packages(data)
-        _write_one(user_path, key, data)
+        _write_one(user_path, user_real, key, data)
 
 
 def move_files(origin):
