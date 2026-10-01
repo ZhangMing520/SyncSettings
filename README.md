@@ -24,11 +24,11 @@ Marcelo
 [![All Contributors](https://img.shields.io/badge/all_contributors-6-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
-[![SyncSettings](https://img.shields.io/packagecontrol/dt/Sync%20Settings.svg?maxAge=2592000)](https://packagecontrol.io/packages/Sync%20Settings)
+[![SyncSettings](https://img.shields.io/packagecontrol/dt/Sync%20Settings%20Reborn.svg?maxAge=2592000)](https://packagecontrol.io/packages/Sync%20Settings%20Reborn)
 [![license](https://img.shields.io/github/license/mashape/apistatus.svg?maxAge=2592000)](https://img.shields.io/github/license/mashape/apistatus.svg?maxAge=2592000)
-[![SyncSettings release](https://img.shields.io/github/release/mfuentesg/SyncSettings.svg)](https://img.shields.io/github/release/mfuentesg/SyncSettings.svg?maxAge=2592000)
-[![Build Status](https://travis-ci.org/mfuentesg/SyncSettings.svg?branch=master)](https://travis-ci.org/mfuentesg/SyncSettings)
-[![Coverage](https://img.shields.io/codecov/c/github/mfuentesg/SyncSettings.svg?style=flat)](https://codecov.io/gh/mfuentesg/SyncSettings)
+[![SyncSettings release](https://img.shields.io/github/release/ZhangMing520/SyncSettingsReborn.svg)](https://img.shields.io/github/release/ZhangMing520/SyncSettingsReborn.svg?maxAge=2592000)
+[![Build Status](https://travis-ci.org/ZhangMing520/SyncSettingsReborn.svg?branch=master)](https://travis-ci.org/ZhangMing520/SyncSettingsReborn)
+[![Coverage](https://img.shields.io/codecov/c/github/ZhangMing520/SyncSettingsReborn.svg?style=flat)](https://codecov.io/gh/ZhangMing520/SyncSettingsReborn)
 
 <a href="https://www.buymeacoffee.com/mfuentesg" target="_blank">
    <img height="41" src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" />
@@ -37,13 +37,13 @@ Marcelo
 <br />
 <br />
 
-With [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings), you are able to synchronize your [Sublime Text](http://sublimetext.com/) settings among multiple devices, and keep them updated.
+With [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings%20Reborn), you are able to synchronize your [Sublime Text](http://sublimetext.com/) settings among multiple devices, and keep them updated.
 
-Being powered by GitHub-Gists, [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings) provides you a reliable cross-platform solution to keep your backups secure.
+Being powered by GitHub-Gists, [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings%20Reborn) provides you a reliable cross-platform solution to keep your backups secure.
 
-Please, follow the steps below to getting started with [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings).
+Please, follow the steps below to getting started with [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings%20Reborn).
 
-> [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings) works on Windows, Linux, macOS and [Sublime Text 3](http://sublimetext.com/3).
+> [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings%20Reborn) works on Windows, Linux, macOS and [Sublime Text 3](http://sublimetext.com/3).
 
 
 ## Getting Started
@@ -122,7 +122,7 @@ Thank you for contribute to this project:
 
 ## Issues
 
-If you are experimenting an error, or an unusual behavior. Please let me know,  creating a [new issue](https://github.com/mfuentesg/SyncSettings/issues/new) appending the logs provided by the  `Sync Settings Reborn: Show logs` command.
+If you are experimenting an error, or an unusual behavior. Please let me know,  creating a [new issue](https://github.com/ZhangMing520/SyncSettingsReborn/issues/new) appending the logs provided by the  `Sync Settings Reborn: Show logs` command.
 
 ## Development
 

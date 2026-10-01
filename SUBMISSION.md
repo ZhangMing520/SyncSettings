@@ -28,7 +28,7 @@ Two options:
 Open https://packagecontrol.io/submit and enter your repository URL:
 
 ```
-https://github.com/ZhangMing520/SyncSettings
+https://github.com/ZhangMing520/SyncSettingsReborn
 ```
 
 **Option B — pull request (recommended, fully controlled)**
@@ -40,7 +40,7 @@ https://github.com/ZhangMing520/SyncSettings
 ```json
 {
     "name": "Sync Settings Reborn",
-    "details": "https://github.com/ZhangMing520/SyncSettings",
+    "details": "https://github.com/ZhangMing520/SyncSettingsReborn",
     "releases": [
         {
             "sublime_text": "*",

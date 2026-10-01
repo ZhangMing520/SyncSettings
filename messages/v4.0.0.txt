@@ -38,4 +38,4 @@ Getting started
    Otherwise create a GitHub token with the `gist` scope, set `access_token`,
    and run `Sync Settings Reborn: Create and Upload`.
 
-Report issues at: https://github.com/ZhangMing520/SyncSettings/issues
+Report issues at: https://github.com/ZhangMing520/SyncSettingsReborn/issues
