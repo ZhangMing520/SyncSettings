@@ -45,6 +45,16 @@ Please, follow the steps below to getting started with [Sync Settings Reborn](ht
 
 > [Sync Settings Reborn](https://packagecontrol.io/packages/Sync%20Settings%20Reborn) works on Windows, Linux, macOS and [Sublime Text 3](http://sublimetext.com/3).
 
+## Sync methods
+
+Besides the default **GitHub Gist** backend, Reborn also offers PackageSync-style ways to sync:
+
+- **Offline Zip backup / restore** — `Sync Settings Reborn: Backup to Zip` and `Restore from Zip` produce a portable archive of your `Packages/User` (your `access_token` is never included).
+- **Backup Package List** — back up only the installed package list.
+- **Sync Online (Dropbox / Google Drive / OneDrive)** — `Define Folder`, `Push`, `Pull` commands move a zip in/out of any cloud-synced folder, no background process required.
+
+On restore, `preserve_packages` (default `true`) merges the incoming `installed_packages` with your local list instead of overwriting it, so packages only on this machine are kept.
+
 
 ## Getting Started
 

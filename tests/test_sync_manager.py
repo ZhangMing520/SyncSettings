@@ -3,6 +3,9 @@
 import unittest
 import mock
 import os
+import json
+import tempfile
+import shutil
 from sync_settings_reborn import sync_manager as manager
 
 
@@ -104,3 +107,73 @@ class TestSyncManager(unittest.TestCase):
     @mock.patch('sync_settings_reborn.sync_manager.path.exists', mock.MagicMock(return_value=True))
     def test_get_content_with_exception(self):
         self.assertEqual(manager.get_content('file.error'), '')
+
+
+def _settings_side_effect(ignore_dirs, excluded_files=None):
+    table = {'ignore_dirs': ignore_dirs, 'excluded_files': excluded_files}
+    return mock.MagicMock(side_effect=lambda key: table.get(key))
+
+
+class ShouldExcludeDirsTest(unittest.TestCase):
+
+    @mock.patch('sync_settings_reborn.sync_manager.settings.get',
+                _settings_side_effect(['IgnoredDir'], None))
+    def test_ignore_dirs_excludes_nested_file(self):
+        self.assertTrue(manager.should_exclude('/Packages/User/IgnoredDir/foo.py'))
+
+    @mock.patch('sync_settings_reborn.sync_manager.settings.get',
+                _settings_side_effect(['IgnoredDir'], None))
+    def test_ignore_dirs_keeps_other_dirs(self):
+        self.assertFalse(manager.should_exclude('/Packages/User/Kept/foo.py'))
+
+    @mock.patch('sync_settings_reborn.sync_manager.settings.get',
+                _settings_side_effect(['*Cache*'], None))
+    def test_ignore_dirs_with_wildcard(self):
+        self.assertTrue(manager.should_exclude('/Packages/User/Foo/Cache/bar.py'))
+
+
+class WriteUserFilesTest(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.user = os.path.join(self.tmp, 'User')
+        os.makedirs(self.user)
+        self.patcher = mock.patch.object(manager.sublime, 'packages_path', lambda: self.tmp)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _read_pc(self):
+        with open(os.path.join(self.user, 'Package Control.sublime-settings')) as f:
+            return json.load(f)
+
+    def test_write_user_files_preserves_local_packages(self):
+        # incoming only has [A, B]; local already has [B, C]
+        local_settings = mock.MagicMock()
+        local_settings.get.return_value = ['B', 'C']
+        with mock.patch.object(manager.sublime, 'load_settings', return_value=local_settings):
+            manager.write_user_files(
+                {'Package%20Control.sublime-settings': json.dumps(
+                    {'installed_packages': ['A', 'B']}).encode()},
+                preserve_packages=True,
+            )
+        self.assertEqual(self._read_pc()['installed_packages'], ['A', 'B', 'C'])
+
+    def test_write_user_files_no_preserve_overwrites(self):
+        local_settings = mock.MagicMock()
+        local_settings.get.return_value = ['B', 'C']
+        with mock.patch.object(manager.sublime, 'load_settings', return_value=local_settings):
+            manager.write_user_files(
+                {'Package%20Control.sublime-settings': json.dumps(
+                    {'installed_packages': ['A', 'B']}).encode()},
+                preserve_packages=False,
+            )
+        # overwrite: only the incoming list remains
+        self.assertEqual(self._read_pc()['installed_packages'], ['A', 'B'])
+
+    def test_write_user_files_writes_plain_file(self):
+        manager.write_user_files({'Preferences.sublime-settings': b'{"x": 1}'}, preserve_packages=True)
+        with open(os.path.join(self.user, 'Preferences.sublime-settings')) as f:
+            self.assertEqual(json.load(f), {'x': 1})

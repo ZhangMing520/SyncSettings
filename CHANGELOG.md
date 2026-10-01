@@ -1,3 +1,16 @@
+## v4.1.0 — PackageSync-style sync
+
+Added sync capabilities alongside the existing GitHub Gist backend:
+
+- Offline **Zip backup / restore** (`Backup to Zip`, `Restore from Zip`) — a
+  portable backup of `Packages/User`, never including your `access_token`.
+- **Backup Package List** — back up only `Package Control.sublime-settings`.
+- **Sync Online** commands (`Define Folder` / `Push` / `Pull`) for a Dropbox /
+  Google Drive / OneDrive based workflow with no background process.
+- New settings: `prompt_for_location` / `backup_path`, `preserve_packages`
+  (default true — merges `installed_packages` on restore instead of overwriting),
+  `ignore_dirs`, `online_sync_folder`.
+
 ## v4.0.0 — Sync Settings Reborn
 
 Maintained revival of the unmaintained original package, published under a new

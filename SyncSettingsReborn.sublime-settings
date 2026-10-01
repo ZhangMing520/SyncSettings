@@ -37,5 +37,21 @@
 
     // If is `true`, your settings will be synced with the latest settings on
     // gist.github.com when Sublime Text startup
-    "auto_upgrade": false
+    "auto_upgrade": false,
+
+    // --- Offline zip backup / restore (PackageSync-style) ---
+    // When `prompt_for_location` is true, the backup/restore commands ask for a
+    // path; otherwise they use `backup_path` (empty falls back to ~/SyncSettingsReborn.zip)
+    "prompt_for_location": true,
+    "backup_path": "",
+
+    // On restore, union the incoming `installed_packages` with the local list
+    // instead of overwriting it, so packages only on this machine are kept
+    "preserve_packages": true,
+
+    // Directory names (fnmatch patterns) to skip entirely when collecting files
+    "ignore_dirs": [],
+
+    // Folder (inside Dropbox/Google Drive/etc.) used by the "Sync Online" commands
+    "online_sync_folder": ""
 }

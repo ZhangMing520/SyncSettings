@@ -27,6 +27,30 @@
         "command": "sync_settings_reborn_open_logs"
     },
     {
+        "caption": "Sync Settings Reborn: Backup to Zip",
+        "command": "sync_settings_reborn_backup"
+    },
+    {
+        "caption": "Sync Settings Reborn: Backup Package List",
+        "command": "sync_settings_reborn_backup_package_list"
+    },
+    {
+        "caption": "Sync Settings Reborn: Restore from Zip",
+        "command": "sync_settings_reborn_restore"
+    },
+    {
+        "caption": "Sync Settings Reborn: Sync Online - Define Folder",
+        "command": "sync_settings_reborn_sync_online_define_folder"
+    },
+    {
+        "caption": "Sync Settings Reborn: Sync Online - Push",
+        "command": "sync_settings_reborn_sync_online_push"
+    },
+    {
+        "caption": "Sync Settings Reborn: Sync Online - Pull",
+        "command": "sync_settings_reborn_sync_online_pull"
+    },
+    {
         "caption": "Sync Settings Reborn: Edit User Settings",
         "command": "open_file",
         "args": {
