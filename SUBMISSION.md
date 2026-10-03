@@ -1,4 +1,4 @@
-# Submitting "Sync Settings Reborn" to Package Control
+# Submitting "SyncSettingsReborn" to Package Control
 
 The original `SyncSettings` package is no longer maintained
 (https://github.com/mfuentesg/SyncSettings). This fork revives it under a new
@@ -34,12 +34,12 @@ https://github.com/ZhangMing520/SyncSettingsReborn
 **Option B — pull request (recommended, fully controlled)**
 
 1. Fork https://github.com/wbond/package_control_channel
-2. Add a file `packages/S/Sync%20Settings%20Reborn.json` (the folder is the
+2. Add a file `packages/S/SyncSettingsReborn.json` (the folder is the
    first letter of the package name) with this content:
 
 ```json
 {
-    "name": "Sync Settings Reborn",
+    "name": "SyncSettingsReborn",
     "details": "https://github.com/ZhangMing520/SyncSettingsReborn",
     "releases": [
         {
@@ -55,7 +55,7 @@ https://github.com/ZhangMing520/SyncSettingsReborn
 ## Result
 
 Once merged, users can install it via:
-`Command Palette → Package Control: Install Package → Sync Settings Reborn`.
+`Command Palette → Package Control: Install Package → SyncSettingsReborn`.
 
 Future updates: just push a new tag (e.g. `v4.0.1`) to your repo; Package
 Control picks it up automatically. No need to re-submit.
@@ -63,8 +63,8 @@ Control picks it up automatically. No need to re-submit.
 ## Notes
 
 - The package install folder name is taken from the channel `name`
-  ("Sync Settings Reborn"), so the installed path is
-  `Packages/Sync Settings Reborn/`.
+  ("SyncSettingsReborn"), so the installed path is
+  `Packages/SyncSettingsReborn/`.
 - Runtime dependencies (`requests` and its transitive deps) are declared in
   `dependencies.json` and installed automatically by Package Control.
 - The settings file was renamed to `SyncSettingsReborn.sublime-settings` and

@@ -1,16 +1,16 @@
-Sync Settings Reborn v4.1.0
+SyncSettingsReborn v4.1.0
 
 This release adds PackageSync-style sync capabilities alongside the existing
 GitHub Gist backend.
 
 New commands
 
-- Sync Settings Reborn: Backup to Zip — offline, portable backup of your
+- SyncSettingsReborn: Backup to Zip — offline, portable backup of your
   Packages/User folder (your `access_token` is never included).
-- Sync Settings Reborn: Backup Package List — back up only the installed
+- SyncSettingsReborn: Backup Package List — back up only the installed
   package list (`Package Control.sublime-settings`).
-- Sync Settings Reborn: Restore from Zip — restore from a previously created zip.
-- Sync Settings Reborn: Sync Online — Define Folder / Push / Pull: a Dropbox /
+- SyncSettingsReborn: Restore from Zip — restore from a previously created zip.
+- SyncSettingsReborn: Sync Online — Define Folder / Push / Pull: a Dropbox /
   Google Drive / OneDrive based workflow without any background process.
 
 New settings

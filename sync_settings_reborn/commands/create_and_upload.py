@@ -25,7 +25,7 @@ class SyncSettingsRebornCreateAndUploadCommand(sublime_plugin.WindowCommand):
     def on_done(self, description):
         files = manager.get_files()
         if not len(files):
-            sublime.status_message('Sync Settings Reborn: there are not files to upload')
+            sublime.status_message('SyncSettingsReborn: there are not files to upload')
             return
         data = {'files': files}
         if description:
@@ -44,14 +44,14 @@ class SyncSettingsRebornCreateAndUploadCommand(sublime_plugin.WindowCommand):
                 https_proxy=settings.get('https_proxy')
             ).create(data)
             msg = (
-                'Sync Settings Reborn:\n\n'
+                'SyncSettingsReborn:\n\n'
                 'Your gist `{}` was created successfully\n\n'
                 'Do you want to overwrite the current `gist_id` property with the created gist?'
             )
             answer = sublime.yes_no_cancel_dialog(msg.format(g['id']))
             if answer == sublime.DIALOG_NO:
                 sublime.set_clipboard(g['id'])
-                sublime.status_message('Sync Settings Reborn: the created gist`s id, has been copied to clipboard')
+                sublime.status_message('SyncSettingsReborn: the created gist`s id, has been copied to clipboard')
             if answer == sublime.DIALOG_YES:
                 commit = g['history'][0]
                 settings.update('gist_id', g['id'])
@@ -59,10 +59,10 @@ class SyncSettingsRebornCreateAndUploadCommand(sublime_plugin.WindowCommand):
                     'hash': commit['version'],
                     'created_at': commit['committed_at'],
                 })
-                sublime.status_message('Sync Settings Reborn: gist created')
+                sublime.status_message('SyncSettingsReborn: gist created')
         except gist.NotFoundError as e:
             msg = (
-                'Sync Settings Reborn:\n\n'
+                'SyncSettingsReborn:\n\n'
                 'Apparently the token was not created with gist scope enabled.\n\n'
                 'Please, check your token or create a new one.\n\n'
                 'more info: https://help.github.com/articles/creating-a-personal-access-token-for-the-command-line/'
@@ -70,4 +70,4 @@ class SyncSettingsRebornCreateAndUploadCommand(sublime_plugin.WindowCommand):
             sublime.message_dialog(msg.format(str(e)))
         except Exception as e:
             logger.exception(e)
-            sublime.message_dialog('Sync Settings Reborn:\n\n{}'.format(str(e)))
+            sublime.message_dialog('SyncSettingsReborn:\n\n{}'.format(str(e)))

@@ -1,11 +1,11 @@
-Sync Settings Reborn
+SyncSettingsReborn
 
 This is a maintained revival of the original "Sync Settings" plugin
 (https://github.com/mfuentesg/SyncSettings), which is no longer updated.
 
 What changed in this release
 
-- The package was renamed to "Sync Settings Reborn" so it can coexist with
+- The package was renamed to "SyncSettingsReborn" so it can coexist with
   (and eventually replace) the unmaintained original on Package Control.
 - All internal identifiers were renamed (commands are now
   `sync_settings_reborn_*`, the settings file is
@@ -33,9 +33,9 @@ Notable fixes in this release
 
 Getting started
 
-1. Run `Sync Settings Reborn: Edit User Settings`
-2. If you already have a gist, set `gist_id` and run `Sync Settings Reborn: Download`.
+1. Run `SyncSettingsReborn: Edit User Settings`
+2. If you already have a gist, set `gist_id` and run `SyncSettingsReborn: Download`.
    Otherwise create a GitHub token with the `gist` scope, set `access_token`,
-   and run `Sync Settings Reborn: Create and Upload`.
+   and run `SyncSettingsReborn: Create and Upload`.
 
 Report issues at: https://github.com/ZhangMing520/SyncSettingsReborn/issues

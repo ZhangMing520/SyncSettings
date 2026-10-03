@@ -125,10 +125,11 @@ def download_file(q):
 
 
 def fetch_files(files, to=''):
-    if not path.exists(to, folder=True):
-        os.mkdir(to)
-    else:
+    # Always (re)create the destination so a leftover temp folder from a prior
+    # failed run can never cause `move_files` to fail with a missing directory.
+    if path.exists(to, folder=True):
         shutil.rmtree(to, ignore_errors=True)
+    os.makedirs(to, exist_ok=True)
 
     rq = Queue(maxsize=0)
     user_path = path.join(sublime.packages_path(), 'User')
@@ -216,6 +217,9 @@ def write_user_files(files, preserve_packages=True):
 
 
 def move_files(origin):
+    if not path.exists(origin, folder=True):
+        logger.warning('download temp folder is missing, nothing to restore: {}'.format(origin))
+        return
     files = {}
     for f in os.listdir(origin):
         with open(path.join(origin, f), 'rb') as fh:

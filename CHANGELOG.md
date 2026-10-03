@@ -11,12 +11,12 @@ Added sync capabilities alongside the existing GitHub Gist backend:
   (default true — merges `installed_packages` on restore instead of overwriting),
   `ignore_dirs`, `online_sync_folder`.
 
-## v4.0.0 — Sync Settings Reborn
+## v4.0.0 — SyncSettingsReborn
 
 Maintained revival of the unmaintained original package, published under a new
 name so it can coexist with (and replace) the dead package on Package Control.
 
-- Renamed package to `Sync Settings Reborn` (commands `sync_settings_reborn_*`,
+- Renamed package to `SyncSettingsReborn` (commands `sync_settings_reborn_*`,
   settings file `SyncSettingsReborn.sublime-settings`).
 - Automatic migration of `gist_id` / `access_token` / proxy / include-exclude
   settings from the old `SyncSettings.sublime-settings` on first run.
@@ -80,13 +80,13 @@ https://github.com/mfuentesg/SyncSettings/issues/87
 
 ## v3.0.0
 
-I am happy to announce a new version of Sync Settings Reborn.
+I am happy to announce a new version of SyncSettingsReborn.
 This version includes a lot of improvements and bug fixes
 
-In the previous version of `Sync Settings Reborn`, all files are replaced automatically once completed the download,
+In the previous version of `SyncSettingsReborn`, all files are replaced automatically once completed the download,
 causing errors like infinite sublime text alerts when a dependency is not installed in your computer.
 
-In this version, Sync Settings Reborn will use `Package Control` commands, to ensure the installation of your packages,
+In this version, SyncSettingsReborn will use `Package Control` commands, to ensure the installation of your packages,
 before to update `Preferences.sublime-settings` and `Package Control.sublime-settings` files.
 
 
@@ -126,7 +126,7 @@ Solved issues:
 ## 2.4.0
 
 - Rename cache file from `.sync_settings_reborn_cache` to `.sync-settings.cache` (~/.sync_settings_reborn_reborn_cache)
-- New Command `Sync Settings Reborn: Edit User Settings` by @JohaWeber
+- New Command `SyncSettingsReborn: Edit User Settings` by @JohaWeber
 - Bug Logging was improved
 
 Issues:

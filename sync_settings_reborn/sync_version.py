@@ -42,7 +42,7 @@ def update_config_file(info):
 
 def show_update_dialog(on_yes=None):
     msg = (
-        'Sync Settings Reborn:\n\n'
+        'SyncSettingsReborn:\n\n'
         'Your settings seem out of date.\n\n'
         'Do you want to download the latest version?'
     )

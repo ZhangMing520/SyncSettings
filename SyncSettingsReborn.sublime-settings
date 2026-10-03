@@ -1,5 +1,5 @@
 {
-    // Brings write permission to Sync Settings Reborn over your gists (edit, delete and create).
+    // Brings write permission to SyncSettingsReborn over your gists (edit, delete and create).
     // This option is not required, if you only want to download your backups
     "access_token": "",
 

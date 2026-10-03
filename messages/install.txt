@@ -1,6 +1,6 @@
-Thanks for installing Sync Settings Reborn
+Thanks for installing SyncSettingsReborn
 
-Sync Settings Reborn is a maintained revival of the original "Sync Settings"
+SyncSettingsReborn is a maintained revival of the original "Sync Settings"
 plugin (https://github.com/mfuentesg/SyncSettings), which is no longer
 updated. It lets you synchronize your Sublime Text settings across multiple
 devices, powered by GitHub Gists.
@@ -15,19 +15,19 @@ Automatic migration from the old package
 
 Getting started
 
-1. Run `Sync Settings Reborn: Edit User Settings`
+1. Run `SyncSettingsReborn: Edit User Settings`
 2. **if** *you already have a gist?*
     1. Copy the `gist id` (`https://gist.github.com/<username>/<gist id>`) and put it in the `gist_id` setting.
-    2. Run `Sync Settings Reborn: Download` to retrieve your backup.
+    2. Run `SyncSettingsReborn: Download` to retrieve your backup.
 3. **else**
     1. Create an access token at https://github.com/settings/tokens/new with the `gist` scope checked.
     2. Put the token in the `access_token` setting.
-    3. Run `Sync Settings Reborn: Create and Upload`.
+    3. Run `SyncSettingsReborn: Create and Upload`.
 
 Issues
 
 If you hit an error or unusual behavior, please report it at
 https://github.com/ZhangMing520/SyncSettingsReborn/issues, and run
-`Sync Settings Reborn: Show Logs` to attach the relevant log output.
+`SyncSettingsReborn: Show Logs` to attach the relevant log output.
 
 You are welcome to contribute!

@@ -199,3 +199,37 @@ class WriteUserFilesTest(unittest.TestCase):
                 preserve_packages=True,
             )
         self.assertEqual(self._read_pc()['installed_packages'], ['A', 'B'])
+
+
+class FetchMoveRegressionTest(unittest.TestCase):
+    """Regression tests for the Download temp-folder crash (sync.log showed
+    FileNotFoundError on the temp dir in move_files)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.patcher = mock.patch.object(manager.sublime, 'packages_path', lambda: self.tmp)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_fetch_files_recreates_leftover_dir(self):
+        # A pre-existing temp dir left behind by a prior failed run must be
+        # recreated (not merely removed) so move_files can read it afterwards.
+        target = os.path.join(self.tmp, 'temp')
+        os.makedirs(target)
+        manager.fetch_files({}, to=target)
+        self.assertTrue(os.path.isdir(target))
+
+    def test_fetch_files_idempotent(self):
+        # Calling fetch_files repeatedly on the same path must not error.
+        target = os.path.join(self.tmp, 'temp')
+        manager.fetch_files({}, to=target)
+        manager.fetch_files({}, to=target)
+        self.assertTrue(os.path.isdir(target))
+
+    def test_move_files_missing_dir_is_noop(self):
+        # A missing temp dir must not raise; it used to crash with
+        # FileNotFoundError inside os.listdir.
+        manager.move_files(os.path.join(self.tmp, 'does-not-exist'))
