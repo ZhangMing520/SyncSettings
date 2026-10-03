@@ -537,6 +537,16 @@ class TestFetchRemote(unittest.TestCase):
         self.assertEqual(get_req.call_args.kwargs['proxies'],
                          {'https': 'http://proxy:3128'})
 
+    def test_normalise_canonicalises_external_literal_slash_keys(self):
+        # A gist created by another tool stores the file under a literal
+        # 'sub/C.sublime-settings'; the internal key must be the encoded form
+        # so it matches the local scan (path.encode('sub/C.sublime-settings'))
+        # instead of re-syncing every cycle.
+        (rev, _, files), _ = self._run_fetch(
+            {'sub/C.sublime-settings': 'http://c'},
+            http=lambda url, **kw: _resp(200, 'x'), last_rev='r1')
+        self.assertEqual(files, {'sub%2FC.sublime-settings': 'x'})
+
 
 class _TempUserDirCase(unittest.TestCase):
     """Temporary Packages/User tree with packages_path() pointed at it."""
@@ -587,6 +597,16 @@ class TestRestoredBaseline(_TempUserDirCase):
         baseline = auto_sync._restored_baseline(g)
         self.assertEqual(baseline,
                          {'sub%2FC.sublime-settings': auto_sync._sha('ccc')})
+
+    def test_canonicalises_external_literal_slash_keys(self):
+        # External gist: literal separator, not percent-encoded. The baseline
+        # key must still be the encoded form so the next cycle stays quiet.
+        self._write(os.path.join('sub', 'C.sublime-settings'), 'ccc')
+        g = {'files': {
+            'sub/C.sublime-settings': {'raw_url': 'http://c'},
+        }}
+        baseline = auto_sync._restored_baseline(g)
+        self.assertEqual(baseline, {'sub%2FC.sublime-settings': auto_sync._sha('ccc')})
 
 
 class TestStatePersistence(unittest.TestCase):

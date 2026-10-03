@@ -3,6 +3,7 @@
 import unittest
 import mock
 import os
+import io
 import json
 import tempfile
 import shutil
@@ -526,3 +527,57 @@ class TestInstallMissingPackages(unittest.TestCase):
                                return_value=['A', 'B', 'C']):
             # active_window is never consulted when nothing is missing.
             manager.install_missing_packages(['A', 'B', 'C'])
+
+
+class PathCanonicalTest(unittest.TestCase):
+    """A gist key created by this plugin (encoded) and by an external tool
+    (literal separators) must collapse to the same internal key."""
+
+    def test_canonical_collapses_literal_and_encoded(self):
+        self.assertEqual(manager.path.canonical('sub/C.sublime-settings'),
+                         manager.path.canonical('sub%2FC.sublime-settings'))
+        self.assertEqual(manager.path.canonical('sub/C.sublime-settings'),
+                         manager.path.encode('sub/C.sublime-settings'))
+
+
+class FetchFilesProxyAndCanonicalTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.patcher = mock.patch.object(manager.sublime, 'packages_path', lambda: self.tmp)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    @staticmethod
+    def _fake_resp():
+        resp = mock.MagicMock()
+        resp.status_code = 200
+        resp.raw = io.BytesIO(b'')
+        return resp
+
+    @mock.patch('sync_settings_reborn.sync_manager.requests.get')
+    @mock.patch('sync_settings_reborn.sync_manager.Gist')
+    def test_fetch_files_passes_configured_proxy(self, Gist, get):
+        # Manual Download must honour the same proxy config as the gist API.
+        Gist.from_settings.return_value.proxies = {'https': 'http://proxy:3128'}
+        get.return_value = self._fake_resp()
+        target = os.path.join(self.tmp, 'temp')
+        manager.fetch_files({'A.sublime-settings': {'raw_url': 'http://a'}}, to=target)
+        get.assert_called_once()
+        self.assertEqual(get.call_args.kwargs['proxies'],
+                         {'https': 'http://proxy:3128'})
+
+    @mock.patch('sync_settings_reborn.sync_manager.requests.get')
+    @mock.patch('sync_settings_reborn.sync_manager.Gist')
+    def test_fetch_files_canonicalises_external_key(self, Gist, get):
+        Gist.from_settings.return_value.proxies = {}
+        get.return_value = self._fake_resp()
+        target = os.path.join(self.tmp, 'temp')
+        # An external gist carries a literal path separator in the filename.
+        manager.fetch_files({'sub/C.sublime-settings': {'raw_url': 'http://c'}}, to=target)
+        # The temp file is written under the canonical (encoded) key so it
+        # decodes back to the same on-disk path this plugin would produce.
+        self.assertTrue(os.path.exists(
+            os.path.join(target, 'sub%2FC.sublime-settings')))

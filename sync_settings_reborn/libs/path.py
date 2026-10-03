@@ -29,6 +29,19 @@ def decode(path):
     return unquote(path)
 
 
+def canonical(name):
+    """Normalise a gist file key into this plugin's internal key space.
+
+    Gists created by other tools may carry literal path separators
+    (``sub/C.sublime-settings``), whereas this plugin stores the percent-encoded
+    form (``sub%2FC.sublime-settings``). Round-tripping through ``decode`` then
+    ``encode`` collapses both forms to the same key the local file scan
+    produces, so the file is recognised as unchanged instead of re-synced on
+    every cycle.
+    """
+    return encode(decode(name))
+
+
 @os_path
 def join(*paths):
     if not len(paths):

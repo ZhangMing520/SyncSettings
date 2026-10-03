@@ -174,7 +174,9 @@ def _normalise_gist_files(g, proxies=None):
                     logger.warning(
                         'auto-sync raw fetch returned status {}: {}'.format(
                             r.status_code, raw_url))
-        files[name] = content
+        # Canonicalise the gist key so a file created by another tool
+        # (literal path separators) still matches the local key space.
+        files[path.canonical(name)] = content
     return files
 
 
@@ -621,7 +623,7 @@ def _restored_baseline(g):
     next background cycle stays quiet. Keys the gist does not carry are
     irrelevant; keys filtered out locally are simply absent.
     """
-    remote_keys = set(g.get('files') or {})
+    remote_keys = {path.canonical(n) for n in (g.get('files') or {})}
     return {k: h for k, h in _current_hashes().items() if k in remote_keys}
 
 

@@ -11,7 +11,7 @@ import threading
 import time
 
 from .libs import path, settings, file
-from .libs.gist import REQUEST_TIMEOUT
+from .libs.gist import Gist, REQUEST_TIMEOUT
 from .libs.logger import logger
 
 from queue import Queue
@@ -253,9 +253,10 @@ def get_files(installed=None):
 
 def download_file(q):
     while not q.empty():
-        url, name = q.get()
+        url, name, proxies = q.get()
         try:
-            r = requests.get(url, stream=True, timeout=REQUEST_TIMEOUT)
+            r = requests.get(url, stream=True, timeout=REQUEST_TIMEOUT,
+                             proxies=proxies)
             if r.status_code == 200:
                 with open(name, 'wb') as f:
                     r.raw.decode_content = True
@@ -278,6 +279,11 @@ def fetch_files(files, to=''):
         shutil.rmtree(to, ignore_errors=True)
     os.makedirs(to, exist_ok=True)
 
+    # Honour the same proxy configuration as the gist API client, so a user
+    # who set http_proxy/https_proxy gets consistent behaviour for the actual
+    # file bytes (raw.githubusercontent.com) too.
+    proxies = Gist.from_settings().proxies
+
     rq = Queue(maxsize=0)
     user_path = path.join(sublime.packages_path(), 'User')
     items = files.items()
@@ -286,7 +292,10 @@ def fetch_files(files, to=''):
         name = path.join(user_path, decoded_name)
         if not is_synced(name):
             continue
-        rq.put((gfile['raw_url'], path.join(to, k)))
+        # Canonicalise the gist key into this plugin's internal key space so a
+        # temp file written here decodes back to the same on-disk path whether
+        # the gist was created by this plugin or an external tool.
+        rq.put((gfile['raw_url'], path.join(to, path.canonical(k)), proxies))
 
     threads = min(10, len(items))
     for i in range(threads):
