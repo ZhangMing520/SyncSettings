@@ -12,33 +12,33 @@ from ..thread_progress import ThreadProgress
 
 
 class SyncSettingsRebornUploadCommand(sublime_plugin.WindowCommand):
-    def _propagate_deletions(self, gist_api, gid, files):
-        """Add ``null`` entries for files THIS machine synced before and has
-        since deleted, so the gist PATCH removes them too.
+    def _remote_state(self, gist_api, gid, files):
+        """Return ``(name_map, removable)`` for the existing gist.
 
-        Only names in the persisted per-machine baseline are eligible. A file
-        another machine synced but this machine has never seen (a fresh
-        install, or an Upload before the first Download) is left untouched —
-        deleting it would wipe the shared gist, and other machines' background
-        merges would then cascade the deletion to their disks. A file merely
-        filtered out of the upload set but still on disk is kept as well.
+        ``name_map`` groups each canonical internal key with the real
+        filename(s) the gist carries — other tools keep literal path
+        separators (``sub/C.sublime-settings`` vs the encoded
+        ``sub%2FC...``), and the PATCH must rename/null those real names
+        instead of forking twins. ``removable`` is the subset of this
+        machine's persisted deletions the gist actually carries; only those
+        are eligible for propagation, compared canonically across key spaces.
+
+        On a failed listing both come back empty: the upload then proceeds
+        with plain encoded keys (deletions are withheld, never guessed).
         """
         baseline = (version.get_local_version() or {}).get('files') or {}
-        # Resolve locally-attributable deletions first; when there are none
-        # (the common case) no gist listing round trip is needed at all.
         deleted = {
             name for name in baseline
             if name not in files and not manager.user_file_exists(name)
         }
-        if not deleted:
-            return
         try:
-            remote_names = (gist_api.get(gid) or {}).get('files') or {}
+            g = gist_api.get(gid) or {}
         except Exception:
             # Can't list the gist: update with what we have, never guess
-            # deletions from a failed listing.
-            return
-        files.update({name: None for name in deleted.intersection(remote_names)})
+            # deletions or renames from a failed listing.
+            return {}, set()
+        name_map = auto_sync._name_map(g)
+        return name_map, {k for k in deleted if k in name_map}
 
     def upload(self, installed=None):
         files = manager.get_files(installed=installed)
@@ -52,10 +52,15 @@ class SyncSettingsRebornUploadCommand(sublime_plugin.WindowCommand):
             gist_api = gist.Gist.from_settings()
             if gid:
                 # Gist PATCH is a merge: files absent from the payload are kept
-                # on the gist. Propagate this machine's real deletions.
-                self._propagate_deletions(gist_api, gid, files)
+                # on the gist. The listing maps real remote names (foreign
+                # tools keep literal separators) to our canonical keys, and
+                # resolves this machine's eligible deletions.
+                name_map, removable = self._remote_state(gist_api, gid, files)
+                payload, _ = auto_sync._build_payload(
+                    set(files) | removable, files,
+                    auto_sync._content_hashes(files), {}, name_map)
                 # Update the existing gist.
-                g = gist_api.update(gid, data={'files': files})
+                g = gist_api.update(gid, data={'files': payload})
             else:
                 # No gist yet: create one and remember it so the next upload
                 # updates instead of creating again. No description prompt, no

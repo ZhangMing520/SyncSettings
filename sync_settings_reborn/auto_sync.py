@@ -126,11 +126,25 @@ def _current_hashes():
     return _content_hashes(_current_files())
 
 
+# Maximum unchanged-revision retries for a file whose raw content keeps
+# failing before auto-sync stops asking for it. The key stays in the
+# baseline (so it is never mistaken for a remote deletion); a later gist
+# revision rearms the retry. Bounds background traffic and log noise when a
+# raw_url is permanently gone (403/404).
+PENDING_MAX_ATTEMPTS = 5
+
+
 def _load_state():
-    """Return ``(gist_revision, {name: hash})`` from sync.json."""
+    """Return ``(gist_revision, {name: hash}, {name: attempts_left})`` from
+    sync.json."""
     info = version.get_local_version() or {}
     files = info.get('files')
-    return info.get('hash'), dict(files) if isinstance(files, dict) else {}
+    pending = info.get('pending')
+    if not isinstance(pending, dict):
+        pending = {}
+    return (info.get('hash'),
+            dict(files) if isinstance(files, dict) else {},
+            {k: v for k, v in pending.items() if isinstance(v, int) and v > 0})
 
 
 def _head_commit(g):
@@ -139,9 +153,25 @@ def _head_commit(g):
     return commit.get('version'), commit.get('committed_at')
 
 
-def _normalise_gist_files(g, proxies=None):
-    """Map a gist payload to ``{encoded_name: content}`` via each file's
-    ``raw_url``.
+def _name_map(g):
+    """canonical internal key -> list of filenames the gist stores for it.
+
+    Gists created by other tools (or pushed via git) can carry literal path
+    separators (``sub/C.sublime-settings``) while this plugin's internal key
+    space is percent-encoded (``sub%2FC.sublime-settings``); older builds even
+    left BOTH names as twins. Writes use this map to rename/delete the REAL
+    remote filename(s) instead of forking or resurrecting duplicates.
+    """
+    grouped = {}
+    for name in (g.get('files') or {}):
+        grouped.setdefault(path.canonical(name), []).append(name)
+    return grouped
+
+
+def _normalise_gist_files(g, proxies=None, only_keys=None):
+    """Map a gist payload to ``({encoded_name: content}, name_map)`` via each
+    file's ``raw_url``; ``name_map`` is built in the same pass (see
+    ``_name_map``) and always covers every file, even with ``only_keys``.
 
     We deliberately never read the API's inline ``content`` field: GitHub
     truncates it for files larger than ~1MB (``truncated: true``) and omits it
@@ -151,13 +181,19 @@ def _normalise_gist_files(g, proxies=None):
     the same validated ``Gist`` client used for the listing, so manual
     Download and auto-sync share one proxy configuration.
 
-    A value of None means the remote file exists but its content could not be
-    fetched this cycle (network error or non-200); callers then skip it rather
-    than treating it as a deletion, so the pull is retried once the content is
-    available.
+    ``only_keys`` restricts the raw downloads to those canonical keys, used on
+    unchanged-revision polls to retry only keys a previous merge could not
+    fetch. A mapped content value of None means the file exists but its
+    content could not be fetched this cycle (network error or non-200);
+    callers skip it rather than treating it as a deletion, so the pull is
+    retried later.
     """
-    files = {}
+    files, name_map = {}, {}
     for name, meta in (g.get('files') or {}).items():
+        key = path.canonical(name)
+        name_map.setdefault(key, []).append(name)
+        if only_keys is not None and key not in only_keys:
+            continue
         content = None
         raw_url = meta.get('raw_url') if isinstance(meta, dict) else None
         if raw_url:
@@ -174,59 +210,96 @@ def _normalise_gist_files(g, proxies=None):
                     logger.warning(
                         'auto-sync raw fetch returned status {}: {}'.format(
                             r.status_code, raw_url))
-        # Canonicalise the gist key so a file created by another tool
-        # (literal path separators) still matches the local key space.
-        files[path.canonical(name)] = content
-    return files
+        files[key] = content
+    return files, name_map
 
 
-def _build_payload(keys, current, hashes, baseline):
+def _build_payload(keys, current, hashes, baseline, name_map=None):
     """Build a gist PATCH payload and the matching new baseline for ``keys``.
 
     A present file uploads its content (``{name: {'content': ...}}``); a key
     missing from disk is deleted remotely (``{name: None}``) only when the
     file is genuinely gone, not when it was merely filtered out.
+
+    ``name_map`` maps canonical internal keys to the filename(s) the gist
+    actually carries (foreign tools keep literal path separators, and old
+    builds may have left twins). A write to a foreign-only file uses the gist
+    rename form (``{old_name: {'filename': canonical, ...}}``); a canonical
+    twin present is updated while the foreign twin is nulled. Deletions null
+    every real remote name, so foreign names converge instead of resurrecting
+    deleted files.
     """
+    name_map = name_map or {}
     payload, new_baseline = {}, dict(baseline)
     for k in keys:
+        actuals = name_map.get(k) or []
         if k in current:
-            payload[k] = {'content': current[k]['content']}
+            entry = {'content': current[k]['content']}
+            if actuals and k not in actuals:
+                # Foreign name(s) only: rename the first to canonical, drop
+                # any extra twins, all in the same PATCH.
+                entry['filename'] = k
+                payload[actuals[0]] = entry
+                for twin in actuals[1:]:
+                    payload[twin] = None
+            else:
+                # Plain key, or the canonical name already exists: update it
+                # and null any foreign twins.
+                payload[k] = entry
+                for twin in actuals:
+                    if twin != k:
+                        payload[twin] = None
             new_baseline[k] = hashes[k]
         elif not manager.user_file_exists(k):
-            payload[k] = None
+            # A genuinely gone file removes every remote name carrying it;
+            # with no remote name the plain key is nulled (local-only key).
+            for target in actuals or [k]:
+                payload[target] = None
             new_baseline.pop(k, None)
     return payload, new_baseline
 
 
-def _fetch_remote(last_rev=None):
-    """Fetch the gist once and return
-    ``(revision_id, committed_at, {encoded_name: content})``.
+def _fetch_remote(last_rev=None, require=None):
+    """Fetch the gist listing and return
+    ``(revision_id, committed_at, {encoded_name: content}, name_map)``.
 
-    When the listing's current revision equals ``last_rev``, the per-file
-    ``raw_url`` downloads are skipped and the content map comes back empty:
-    the caller only needs that revision for its unchanged-remote pre-check,
-    and fetching every file's full bytes on an idle poll would re-download the
-    whole gist for nothing. Callers that genuinely need content (a changed
-    revision, or an adoption path) pass no/another revision.
+    Per-file ``raw_url`` downloads happen only when content is needed:
 
-    Returns ``(None, None, {})`` on a transient failure (retry next cycle);
-    raises NotFoundError on a deleted gist so the caller can surface it once.
+    * a revision different from ``last_rev``: every file is fetched (a full
+      three-way merge);
+    * an unchanged revision with ``require`` keys: only those keys, used to
+      retry content an earlier merge could not fetch;
+    * an unchanged revision with nothing required: no raw downloads at all.
+
+    Idle polls therefore cost a single lightweight listing instead of
+    re-downloading the whole gist, and one permanently failing file can only
+    ever cost its own single retry per cycle.
+
+    Returns ``(None, None, {}, {})`` on a transient failure (retry next
+    cycle); raises NotFoundError on a deleted gist so the caller surfaces it.
     """
     gid = settings.get('gist_id')
     if not gid:
-        return None, None, {}
+        return None, None, {}, {}
     try:
         api = Gist.from_settings()
         g = api.get(gid)
         rev, committed_at = _head_commit(g)
-        if last_rev is not None and rev == last_rev:
-            return rev, committed_at, {}
-        return rev, committed_at, _normalise_gist_files(g, api.proxies)
+        if last_rev is None or rev != last_rev:
+            files, name_map = _normalise_gist_files(g, api.proxies)
+        elif require:
+            files, name_map = _normalise_gist_files(
+                g, api.proxies, only_keys=require)
+        else:
+            # Unchanged and nothing pending: skip every raw download; the
+            # listing alone still yields the filename map for local pushes.
+            files, name_map = {}, _name_map(g)
+        return rev, committed_at, files, name_map
     except NotFoundError:
         raise
     except Exception as e:
         logger.exception(e)
-        return None, None, {}
+        return None, None, {}, {}
 
 
 def _apply_remote(remote_files, to_pull):
@@ -310,6 +383,12 @@ class AutoSync:
         # The gist revision we last observed, for a cheap unchanged pre-check.
         self._last_seen_remote = None
         self._last_committed_at = None
+        # Keys whose content a merge could not fetch: {canonical key: retries
+        # left}. Unchanged-revision polls re-request only these raw_urls.
+        self._pending = {}
+        # canonical key -> actual gist filename from the latest listing/push,
+        # so writes rename/delete the real remote name.
+        self._remote_names = {}
         # When set to a gist id that gist 404'd: sync is actually paused (no
         # more polls of it) and the dialog was shown, until gist_id changes.
         self._missing_gist = None
@@ -337,9 +416,10 @@ class AutoSync:
         # Restore the persisted common ancestor. We deliberately do NOT seed it
         # from the current disk state: doing so would make edits performed
         # while Sublime was closed look "already synced" after a restart.
-        rev, files = _load_state()
+        rev, files, pending = _load_state()
         self._last_synced = files
         self._last_seen_remote = rev
+        self._pending = dict(pending)
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         logger.info('auto-sync started (interval {}s)'.format(self._interval))
@@ -371,14 +451,19 @@ class AutoSync:
             'hash': self._last_seen_remote,
             'created_at': self._last_committed_at or '',
             'files': self._last_synced,
+            'pending': self._pending,
         })
 
-    def adopt(self, rev, committed_at, baseline):
+    def adopt(self, rev, committed_at, baseline, remote_names=None):
         """Adopt an externally established sync point (a manual Upload or
         Download command) so its files don't look like fresh deltas here."""
         self._last_seen_remote = rev
         self._last_committed_at = committed_at
         self._last_synced = dict(baseline)
+        # A manual command just established a complete, consistent state:
+        # nothing is pending, and its gist response defines the real names.
+        self._pending = {}
+        self._remote_names = dict(remote_names or {})
         self._missing_gist = None
         try:
             self._persist_state()
@@ -387,6 +472,8 @@ class AutoSync:
 
     def _record_push(self, g):
         self._last_seen_remote, self._last_committed_at = _head_commit(g)
+        # The response reflects any renames our PATCH just performed.
+        self._remote_names = _name_map(g)
         self._missing_gist = None
         logger.info('auto-sync push complete')
 
@@ -425,15 +512,21 @@ class AutoSync:
             self._initial_push()
             return
         try:
-            rev, committed_at, remote_files = _fetch_remote(self._last_seen_remote)
+            rev, committed_at, remote_files, name_map = _fetch_remote(
+                self._last_seen_remote,
+                require=set(self._pending) or None)
         except NotFoundError:
             self._warn_missing_gist(gid)
             return
-        if rev is None and not remote_files:
+        if rev is None:
             # Transient failure; retry next cycle rather than guessing.
             return
+        self._remote_names = name_map
         if rev == self._last_seen_remote:
-            # Remote is unchanged since we last looked: only push local edits.
+            # Remote unchanged: retry keys a previous merge could not fetch;
+            # when that resolves it also pushes this cycle's local deltas.
+            if self._pending and self._retry_pending(remote_files):
+                return
             self._push_local_delta()
             return
         self._merge(rev, committed_at, remote_files)
@@ -464,7 +557,8 @@ class AutoSync:
         changed = {k for k in set(current_hashes) | set(last)
                    if current_hashes.get(k) != last.get(k)}
         payload, new_baseline = _build_payload(changed, current,
-                                               current_hashes, last)
+                                               current_hashes, last,
+                                               self._remote_names)
         if not payload:
             return
         g = _push(payload)
@@ -477,8 +571,63 @@ class AutoSync:
         self._last_synced = new_baseline
         self._persist_state()
 
+    def _warn_and_backup_conflicts(self, conflicts, current):
+        """The gist wins a conflict: warn the user and back up recoverable
+        local edits (files present on disk) before the remote overwrites."""
+        backup_keys = [k for k in conflicts if k in current]
+        if not backup_keys:
+            return
+        names = ', '.join(path.decode(k) for k in backup_keys)
+        msg = 'SyncSettingsReborn: auto-sync conflict on: {}'.format(names)
+        logger.warning(msg)
+        _on_main(lambda m=msg: sublime.status_message(m))
+        _backup_conflicts(backup_keys, current)
+
+    def _consume_remote_wins(self, present, deleted, conflicts, remote_files,
+                             current, installed, last):
+        """Apply gist-wins writes/deletions and converge onto them.
+
+        Shared by full merges and pending-key retries: back up local
+        conflicts, write pulled content / delete remotely removed files,
+        best-effort install missing packages, then re-scan (writes may merge
+        Package Control content) and re-baseline. Returns
+        ``(current, current_hashes, new_baseline, pull_push_keys)``;
+        pull_push_keys are pulled files whose post-write content differs from
+        the raw remote (a local merge result) and must be pushed back.
+        """
+        self._warn_and_backup_conflicts(conflicts, current)
+        if present:
+            _apply_remote(remote_files, set(present))
+        if deleted:
+            manager.delete_user_files(sorted(deleted))
+        # Best-effort: bring this machine's plugin set in line with the remote
+        # one, so a sync on a fresh machine converges without a manual Download.
+        pc_key = path.encode('Package Control.sublime-settings')
+        pc_content = remote_files.get(pc_key)
+        if pc_key in present and pc_content:
+            manager.install_missing_packages(
+                manager.installed_packages_from_content(pc_content))
+        # Re-collect AFTER writing: write_user_files may merge content
+        # (Package Control installed_packages union), and the push must carry
+        # that merged result, not a stale pre-pull copy.
+        if present or deleted:
+            current = _current_files(installed)
+        current_hashes = _content_hashes(current)
+        # Pulled files join the baseline at post-write hashes; remotely
+        # deleted files leave it.
+        new_baseline = dict(last)
+        for k in present:
+            if k in current_hashes:
+                new_baseline[k] = current_hashes[k]
+        for k in deleted:
+            new_baseline.pop(k, None)
+        remote_hashes = {k: _sha(v) for k, v in remote_files.items() if v}
+        pull_push = {k for k in present
+                     if k in current_hashes
+                     and current_hashes[k] != remote_hashes.get(k)}
+        return current, current_hashes, new_baseline, pull_push
+
     def _merge(self, rev, committed_at, remote_files):
-        previous_rev = self._last_seen_remote
         installed = _snapshot_installed()
         current = _current_files(installed)
         current_hashes = _content_hashes(current)
@@ -496,14 +645,6 @@ class AutoSync:
         # wins; back up recoverable local edits first (covers both
         # remote-modified and remote-deleted cases).
         conflicts = sorted(local_changed & remote_changed)
-        backup_keys = [k for k in conflicts if k in current]
-        if backup_keys:
-            names = ', '.join(path.decode(k) for k in backup_keys)
-            msg = 'SyncSettingsReborn: auto-sync conflict on: {}'.format(names)
-            logger.warning(msg)
-            _on_main(lambda m=msg: sublime.status_message(m))
-            _backup_conflicts(backup_keys, current)
-
         # Delta pull (conflicts resolve to the remote side, including a
         # remote deletion). Classify into write / delete / unavailable.
         pull_keys = (remote_changed - local_changed) | set(conflicts)
@@ -515,49 +656,19 @@ class AutoSync:
                 pull_present.append(k)
             else:
                 pull_unavailable.append(k)
-        if pull_unavailable:
-            logger.warning('auto-sync skipped files whose remote content '
-                           'could not be fetched (network error or non-200; '
-                           'will retry next cycle): {}'.format(
-                               ', '.join(sorted(pull_unavailable))))
-        if pull_present:
-            _apply_remote(remote_files, set(pull_present))
-        if pull_deleted:
-            manager.delete_user_files(sorted(pull_deleted))
 
-        # Best-effort: bring this machine's plugin set in line with the remote
-        # one, so a sync on a fresh machine converges without a manual Download.
-        pc_key = path.encode('Package Control.sublime-settings')
-        pc_content = remote_files.get(pc_key)
-        if pc_key in pull_present and pc_content:
-            manager.install_missing_packages(
-                manager.installed_packages_from_content(pc_content))
+        current, current_hashes, new_baseline, pull_push = \
+            self._consume_remote_wins(
+                pull_present, pull_deleted, conflicts, remote_files,
+                current, installed, last)
 
-        # Re-collect AFTER writing: write_user_files may merge content
-        # (Package Control installed_packages union), and the push must carry
-        # that merged result, not a stale pre-pull copy.
-        if pull_present or pull_deleted:
-            current = _current_files(installed)
-            current_hashes = _content_hashes(current)
-
-        # Pulled files become part of the baseline at their post-write hashes;
-        # remotely deleted files leave it. Local deltas then add/update/remove
-        # theirs through the same payload builder the other paths use.
-        new_baseline = dict(last)
-        for k in pull_present:
-            if k in current_hashes:
-                new_baseline[k] = current_hashes[k]
-        for k in pull_deleted:
-            new_baseline.pop(k, None)
-
-        # Locally changed, non-conflict files are pushed. A pulled file whose
-        # on-disk content differs from the remote hash (a local merge result)
-        # is pushed too, so the union converges across machines.
-        push_keys = set(local_changed) - set(conflicts)
-        push_keys |= {k for k in pull_present
-                      if k in current_hashes and current_hashes[k] != remote_hashes.get(k)}
+        # Locally changed, non-conflict files are pushed, plus any pulled file
+        # whose on-disk content differs from the raw remote (a local merge
+        # result such as the Package Control union), so machines converge.
+        push_keys = (set(local_changed) - set(conflicts)) | pull_push
         payload, new_baseline = _build_payload(
-            push_keys, current, current_hashes, new_baseline)
+            push_keys, current, current_hashes, new_baseline,
+            self._remote_names)
         # Keys filtered out locally but still on disk are kept on the gist:
         # _build_payload simply leaves them out of the payload/baseline delta.
 
@@ -569,15 +680,92 @@ class AutoSync:
                 return
             self._record_push(g)
 
-        # Keep the previous revision marker when some remote content was
-        # unavailable: otherwise the unchanged-revision gate in _fetch_remote
-        # would stop re-fetching content on every later idle poll, and the
-        # failed keys would never get another retry until an unrelated remote
-        # change appeared.
-        self._last_seen_remote = previous_rev if pull_unavailable else rev
+        # Adopt the observed revision normally; keys whose content could not
+        # be fetched go into a per-key retry set, so unchanged-revision polls
+        # re-request only those raw_urls instead of re-downloading the whole
+        # gist. A new revision rearms every budget (the gist genuinely moved).
+        self._pending = {k: PENDING_MAX_ATTEMPTS - 1 for k in pull_unavailable}
+        self._last_seen_remote = rev
         self._last_committed_at = committed_at
         self._last_synced = new_baseline
         self._persist_state()
+
+    def _spend_pending(self, failed_keys):
+        """Decrement retry budgets for keys that failed on a retry poll.
+
+        Every key is already in ``self._pending``. Keys that recover simply
+        disappear (they are not in ``failed_keys``). Keys whose budget runs
+        out are dropped with a loud error: they keep their old baseline entry,
+        so the gist revision still advances and they are never treated as
+        deletions; the next changed gist revision rearms them via ``_merge``.
+        """
+        pending = {}
+        for k in failed_keys:
+            attempts = self._pending[k] - 1
+            if attempts > 0:
+                pending[k] = attempts
+            else:
+                logger.error('auto-sync giving up fetching {} after {} '
+                             'attempts; keeping the last synced copy. It will '
+                             'be retried if the gist changes.'.format(
+                                 path.decode(k), PENDING_MAX_ATTEMPTS))
+        if failed_keys:
+            logger.warning('auto-sync could not fetch remote content for: '
+                           '{}'.format(', '.join(sorted(failed_keys))))
+        return pending
+
+    def _retry_pending(self, remote_files):
+        """Apply content recovered for pending keys on an unchanged-revision
+        poll (only those keys' raw_urls were requested), using the exact same
+        gist-wins rules as ``_merge``. Also pushes ordinary local deltas seen
+        on the same pre/post-write scans, saving a separate push cycle.
+
+        Returns False when nothing recovered (budgets spent; the caller should
+        still run its usual local-delta push), True once state moved.
+        """
+        pending = set(self._pending)
+        fetched = {k: v for k, v in remote_files.items() if v}
+        if not fetched:
+            # Nothing recovered. A pending key missing from the listing at the
+            # SAME revision cannot happen (revisions are immutable snapshots;
+            # a changed gist goes through _merge), so it is just retried.
+            self._pending = self._spend_pending(sorted(pending))
+            self._persist_state()
+            return False
+
+        installed = _snapshot_installed()
+        current = _current_files(installed)
+        current_hashes = _content_hashes(current)
+        last = dict(self._last_synced or {})
+
+        # The persisted baseline is still the common ancestor: a local edit
+        # to a key the gist also changed while pending is a conflict.
+        local_changed = {k for k in set(current_hashes) | set(last)
+                         if current_hashes.get(k) != last.get(k)}
+        conflicts = sorted(set(fetched) & local_changed)
+
+        current, current_hashes, new_baseline, pull_push = \
+            self._consume_remote_wins(
+                set(fetched), (), conflicts, remote_files,
+                current, installed, last)
+
+        push_keys = (local_changed - set(conflicts)) | pull_push
+        payload, new_baseline = _build_payload(
+            push_keys, current, current_hashes, new_baseline,
+            self._remote_names)
+        if payload:
+            g = _push(payload)
+            if g is None:
+                # Nothing moves; pulls are idempotent and the caller's local
+                # delta path retries the push next.
+                return False
+            self._record_push(g)
+
+        self._last_synced = new_baseline
+        self._pending = self._spend_pending(
+            sorted(pending - set(fetched)))
+        self._persist_state()
+        return True
 
 
 # Module-level singleton so plugin_loaded / plugin_unloaded can manage it, and
@@ -600,7 +788,7 @@ def shutdown():
 def _adopt_gist(g, baseline, kind):
     try:
         rev, committed_at = _head_commit(g)
-        _auto_sync.adopt(rev, committed_at, baseline)
+        _auto_sync.adopt(rev, committed_at, baseline, _name_map(g))
     except Exception as e:
         logger.warning('auto-sync could not adopt manual {}: {}'.format(kind, e))
 

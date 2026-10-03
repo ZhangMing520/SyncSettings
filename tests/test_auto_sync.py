@@ -128,7 +128,7 @@ class TestSyncOnce(unittest.TestCase):
                 return_value=True)
     @mock.patch('sync_settings_reborn.auto_sync._push', return_value=_gist('r1-p'))
     @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
-                return_value=('r1', 't', {}))
+                return_value=('r1', 't', {}, {}))
     @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
     @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
                 return_value=None)
@@ -142,7 +142,7 @@ class TestSyncOnce(unittest.TestCase):
         # The single gist listing reports the same revision; its body is ignored
         # and only the local delta is pushed. The last-seen revision is passed
         # in so the fetch skips per-file raw downloads entirely.
-        _fetch.assert_called_once_with('r1')
+        _fetch.assert_called_once_with('r1', require=None)
         _push.assert_called_once()
         pushed = set(_push.call_args.args[0])
         self.assertEqual(pushed, {'B.sublime-settings'})
@@ -156,7 +156,7 @@ class TestSyncOnce(unittest.TestCase):
     @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
     @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
                 return_value=('r2', 't', {'A.sublime-settings': 'x',
-                                          'C.sublime-settings': 'z'}))
+                                          'C.sublime-settings': 'z'}, {}))
     @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
     @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
                 return_value=None)
@@ -188,7 +188,7 @@ class TestSyncOnce(unittest.TestCase):
     @mock.patch('sync_settings_reborn.auto_sync._push')
     @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
     @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
-                return_value=('r2', 't', {'A.sublime-settings': 'x3'}))
+                return_value=('r2', 't', {'A.sublime-settings': 'x3'}, {}))
     @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
     @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
                 return_value=None)
@@ -218,7 +218,7 @@ class TestSyncOnce(unittest.TestCase):
     @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
     @mock.patch('sync_settings_reborn.auto_sync.manager.delete_user_files')
     @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
-                return_value=('r2', 't', {}))
+                return_value=('r2', 't', {}, {}))
     @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
     @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
                 return_value=None)
@@ -241,11 +241,11 @@ class TestSyncOnce(unittest.TestCase):
     @mock.patch('sync_settings_reborn.auto_sync._push')
     @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
     @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
-                return_value=('r2', 't', {'A.sublime-settings': None}))
+                return_value=('r2', 't', {'A.sublime-settings': None}, {}))
     @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
     @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
                 return_value=None)
-    def test_unavailable_remote_content_skipped_and_revision_not_adopted(
+    def test_unavailable_remote_content_arms_pending_and_adopts_revision(
             self, _snap, get_files, _fetch, write, _push, _exists):
         _patch_settings(gist_id='g1')
         get_files.return_value = _files({'A.sublime-settings': 'x'})
@@ -254,19 +254,23 @@ class TestSyncOnce(unittest.TestCase):
         self.svc._sync_once()
         write.assert_not_called()
         _push.assert_not_called()
-        # Baseline kept so the pull is retried once the content is available.
+        # Baseline kept so the file is never treated as a remote deletion.
         self.assertIn('A.sublime-settings', self.svc._last_synced)
-        # The new revision is deliberately NOT adopted: otherwise the unchanged
-        # gate would skip raw fetches on every later idle poll and the failed
-        # file would never be retried.
-        self.assertEqual(self.svc._last_seen_remote, 'r1')
+        # The revision IS adopted now: idle polls must not re-download the
+        # whole gist. Instead the failed key gets a bounded retry budget and
+        # is re-requested on its own until it recovers (or the gist changes).
+        self.assertEqual(self.svc._last_seen_remote, 'r2')
+        self.assertEqual(self.svc._pending,
+                         {'A.sublime-settings':
+                          auto_sync.PENDING_MAX_ATTEMPTS - 1})
+        _fetch.assert_called_once_with('r1', require=None)
 
     @mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists')
     @mock.patch('sync_settings_reborn.auto_sync._push')
     @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
     @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
                 return_value=('r2', 't', {'A.sublime-settings': 'x',
-                                          'R.sublime-settings': 'z'}))
+                                          'R.sublime-settings': 'z'}, {}))
     @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
     @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
                 return_value=None)
@@ -288,7 +292,7 @@ class TestSyncOnce(unittest.TestCase):
     @mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists')
     @mock.patch('sync_settings_reborn.auto_sync._push')
     @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
-                return_value=('r1', 't', {}))
+                return_value=('r1', 't', {}, {}))
     @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
     @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
                 return_value=None)
@@ -309,7 +313,7 @@ class TestSyncOnce(unittest.TestCase):
     @mock.patch('sync_settings_reborn.auto_sync._push')
     @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
     @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
-                return_value=('r2', 't', {'PC.sublime-settings': 'remote'}))
+                return_value=('r2', 't', {'PC.sublime-settings': 'remote'}, {}))
     @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
     @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
                 return_value=None)
@@ -331,6 +335,155 @@ class TestSyncOnce(unittest.TestCase):
             {'content': 'merged-union'})
 
 
+class TestPendingRetries(unittest.TestCase):
+    KEY = 'A.sublime-settings'
+    MAP = {KEY: [KEY]}
+
+    def setUp(self):
+        self.svc = auto_sync.AutoSync()
+        _patch_settings(gist_id='g1')
+
+        def patch(target, **kw):
+            return mock.patch(target, **kw).start()
+
+        self.fetch = patch('sync_settings_reborn.auto_sync._fetch_remote')
+        self.get_files = patch(
+            'sync_settings_reborn.auto_sync.manager.get_files')
+        self.write = patch(
+            'sync_settings_reborn.auto_sync.manager.write_user_files')
+        patch('sync_settings_reborn.auto_sync._push')
+        patch('sync_settings_reborn.auto_sync.manager.user_file_exists',
+              return_value=True)
+        patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+              return_value=None)
+
+    def tearDown(self):
+        mock.patch.stopall()
+
+    def test_unchanged_poll_retries_only_pending_key_and_applies_it(self):
+        # Cycle 1: a new revision whose raw content we cannot fetch.
+        # Cycle 2: same revision, only the pending key's raw_url is retried
+        # and now succeeds.
+        self.fetch.side_effect = [
+            ('r2', 't', {self.KEY: None}, self.MAP),
+            ('r2', 't', {self.KEY: 'z'}, self.MAP),
+        ]
+        self.get_files.side_effect = [
+            _files({self.KEY: 'x'}),   # merge scan
+            _files({self.KEY: 'x'}),   # retry pre-write scan
+            _files({self.KEY: 'z'}),   # retry post-write re-scan
+        ]
+        self.svc._last_synced = {self.KEY: _h('x')}
+        self.svc._last_seen_remote = 'r1'
+
+        self.svc._sync_once()
+        self.assertEqual(self.svc._pending, {self.KEY: 4})
+        self.svc._sync_once()
+
+        # Only the pending key was asked for on the unchanged poll, and the
+        # recovered content was applied with no whole-gist re-download.
+        self.assertEqual(self.fetch.call_args_list[0].args, ('r1',))
+        self.assertEqual(self.fetch.call_args_list[0].kwargs,
+                         {'require': None})
+        self.assertEqual(self.fetch.call_args_list[1].args, ('r2',))
+        self.assertEqual(self.fetch.call_args_list[1].kwargs,
+                         {'require': {self.KEY}})
+        self.write.assert_called_once_with({self.KEY: 'z'},
+                                           preserve_packages=True)
+        self.assertEqual(self.svc._pending, {})
+        self.assertEqual(self.svc._last_synced[self.KEY], _h('z'))
+        self.assertEqual(self.svc._last_seen_remote, 'r2')
+
+    def test_permanent_failure_stops_after_budget_and_never_redownloads_rest(
+            self):
+        # A key that never recovers must spend its budget on targeted retries
+        # only; afterwards idle polls ask for nothing and no merge repeats.
+        self.fetch.return_value = ('r2', 't', {self.KEY: None}, self.MAP)
+        self.get_files.return_value = _files({self.KEY: 'x'})
+        self.svc._last_synced = {self.KEY: _h('x')}
+        self.svc._last_seen_remote = 'r1'
+
+        # 1 full merge + PENDING_MAX_ATTEMPTS-1 targeted retries exhaust it.
+        for _ in range(auto_sync.PENDING_MAX_ATTEMPTS):
+            self.svc._sync_once()
+        self.assertEqual(self.svc._pending, {})
+        self.write.assert_not_called()
+        # One more idle poll: pending is empty, nothing is requested.
+        self.svc._sync_once()
+        self.assertEqual(self.fetch.call_args_list[-1].args, ('r2',))
+        self.assertEqual(self.fetch.call_args_list[-1].kwargs,
+                         {'require': None})
+        self.assertEqual(self.svc._last_seen_remote, 'r2')
+        # The last-known baseline copy is retained (never a deletion).
+        self.assertEqual(self.svc._last_synced[self.KEY], _h('x'))
+
+    def test_pending_recovery_conflicting_with_local_edit_gist_wins(self):
+        backup = mock.patch(
+            'sync_settings_reborn.auto_sync._backup_conflicts').start()
+        self.fetch.side_effect = [
+            ('r2', 't', {self.KEY: None}, self.MAP),
+            ('r2', 't', {self.KEY: 'z'}, self.MAP),
+        ]
+        self.get_files.side_effect = [
+            _files({self.KEY: 'x'}),      # merge scan
+            _files({self.KEY: 'local'}),  # user edited while content pending
+            _files({self.KEY: 'z'}),      # post-pull re-scan
+        ]
+        self.svc._last_synced = {self.KEY: _h('x')}
+        self.svc._last_seen_remote = 'r1'
+        self.svc._sync_once()
+        self.svc._sync_once()
+        backup.assert_called_once()
+        self.assertEqual(backup.call_args.args[0], [self.KEY])
+        self.write.assert_called_once_with({self.KEY: 'z'},
+                                           preserve_packages=True)
+        self.assertEqual(self.svc._pending, {})
+
+
+class TestBuildPayload(unittest.TestCase):
+    KEY = 'sub%2FC.sublime-settings'
+    FOREIGN = 'sub/C.sublime-settings'
+
+    def _call(self, keys, current, name_map, exists=False):
+        with mock.patch(
+                'sync_settings_reborn.auto_sync.manager.user_file_exists',
+                return_value=exists):
+            return auto_sync._build_payload(
+                keys, current, auto_sync._content_hashes(current),
+                {}, name_map)
+
+    def test_foreign_only_file_is_renamed_to_canonical(self):
+        current = _files({self.KEY: 'x'})
+        payload, baseline = self._call(
+            {self.KEY}, current, {self.KEY: [self.FOREIGN]})
+        self.assertEqual(payload, {
+            self.FOREIGN: {'filename': self.KEY, 'content': 'x'}})
+        self.assertEqual(baseline, {self.KEY: _h('x')})
+
+    def test_canonical_and_foreign_twins_update_canonical_drop_foreign(self):
+        current = _files({self.KEY: 'x'})
+        payload, _ = self._call(
+            {self.KEY}, current, {self.KEY: [self.KEY, self.FOREIGN]})
+        self.assertEqual(payload, {
+            self.KEY: {'content': 'x'}, self.FOREIGN: None})
+
+    def test_deleted_foreign_file_nulls_real_remote_name(self):
+        payload, baseline = self._call(
+            {self.KEY}, {}, {self.KEY: [self.FOREIGN]})
+        self.assertEqual(payload, {self.FOREIGN: None})
+        self.assertEqual(baseline, {})
+
+    def test_deleted_file_with_twins_removes_both_names(self):
+        payload, _ = self._call(
+            {self.KEY}, {}, {self.KEY: [self.KEY, self.FOREIGN]})
+        self.assertEqual(payload, {self.KEY: None, self.FOREIGN: None})
+
+    def test_plain_key_keeps_original_form_without_name_map(self):
+        current = _files({'A.sublime-settings': 'x'})
+        payload, _ = self._call({'A.sublime-settings'}, current, {})
+        self.assertEqual(payload, {'A.sublime-settings': {'content': 'x'}})
+
+
 class TestMissingGist(unittest.TestCase):
     def setUp(self):
         self.svc = auto_sync.AutoSync()
@@ -348,14 +501,14 @@ class TestMissingGist(unittest.TestCase):
         self.svc._sync_once()
         self.assertEqual(self.dialog.call_count, 1)
         # Sync really paused: the dead gist is not polled on the second cycle.
-        fetch.assert_called_once_with(None)
+        fetch.assert_called_once_with(None, require=None)
         self.assertEqual(self.svc._missing_gist, 'g1')
 
     @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
                 return_value=None)
     @mock.patch('sync_settings_reborn.auto_sync.manager.get_files', return_value={})
     @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
-                side_effect=[NotFoundError('gone'), ('r9', 't', {})])
+                side_effect=[NotFoundError('gone'), ('r9', 't', {}, {})])
     def test_resumes_after_gist_id_changes(self, fetch, _files_mock, _snap):
         self.svc._sync_once()  # g1 404 -> paused
         _patch_settings(gist_id='g2')
@@ -434,7 +587,7 @@ class TestOfflineEdits(unittest.TestCase):
 
     @mock.patch('sync_settings_reborn.auto_sync._push', return_value=_gist('r1-p'))
     @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
-                return_value=('r1', 't', {}))
+                return_value=('r1', 't', {}, {}))
     @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
     def test_offline_edit_is_pushed(self, get_files, _fetch, push):
         get_files.return_value = _files({'A.sublime-settings': 'x2'})
@@ -449,7 +602,7 @@ class TestOfflineEdits(unittest.TestCase):
     @mock.patch('sync_settings_reborn.auto_sync._push')
     @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
     @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
-                return_value=('r2', 't', {'A.sublime-settings': 'x3'}))
+                return_value=('r2', 't', {'A.sublime-settings': 'x3'}, {}))
     @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
     def test_offline_edit_conflicting_with_remote_is_backed_up(self, get_files,
                                                                _fetch, write,
@@ -467,11 +620,12 @@ class TestOfflineEdits(unittest.TestCase):
 
 
 class TestFetchRemote(unittest.TestCase):
-    def _run_fetch(self, urls, http=None, last_rev=None, proxies=None):
+    def _run_fetch(self, urls, http=None, last_rev=None, proxies=None,
+                   require=None):
         """Common scaffolding: a listing at revision r2 carrying ``urls``
         ({encoded_name: raw_url}), one Gist client, and a requests.get
         stand-in (``http`` may be a callable(url, **kw) or a fixed response).
-        Returns ``((rev, committed_at, files), get_mock)``.
+        Returns ``((rev, committed_at, files, name_map), get_mock)``.
         """
         client = mock.MagicMock()
         client.get.return_value = {
@@ -488,46 +642,72 @@ class TestFetchRemote(unittest.TestCase):
                         return_value=client), \
                 mock.patch('sync_settings_reborn.auto_sync.requests.get',
                            side_effect=http) as get_req:
-            return auto_sync._fetch_remote(last_rev), get_req
+            return auto_sync._fetch_remote(last_rev, require=require), get_req
 
     def test_fetches_remote_content_via_raw_url(self):
         responses = {'http://a': _resp(200, 'x'),
                      'http://b': _resp(200, 'big-content')}
         # The listing's inline content field is ignored; bytes come from
         # raw_url (including files the inline field would truncate/omit).
-        (rev, _, files), _ = self._run_fetch(
+        (rev, _, files, names), _ = self._run_fetch(
             {'A.sublime-settings': 'http://a',
              'Big.sublime-settings': 'http://b'},
             http=lambda url, **kw: responses[url])
         self.assertEqual(rev, 'r2')
         self.assertEqual(files, {'A.sublime-settings': 'x',
                                  'Big.sublime-settings': 'big-content'})
+        # The listing also yields the canonical -> actual filename map writes
+        # need to rename/delete the real remote file.
+        self.assertEqual(names, {'A.sublime-settings': ['A.sublime-settings'],
+                                 'Big.sublime-settings': ['Big.sublime-settings']})
 
     def test_raw_fetch_failure_is_skipped_not_deleted(self):
         def _boom(url, **kw):
             raise requests.exceptions.RequestException('boom')
 
-        (rev, _, files), _ = self._run_fetch(
+        (rev, _, files, _), _ = self._run_fetch(
             {'A.sublime-settings': 'http://a'}, http=_boom)
         self.assertEqual(rev, 'r2')
         # Fetch failed: key kept (file exists) but content unavailable.
         self.assertIsNone(files['A.sublime-settings'])
 
     def test_non_200_raw_fetch_is_none_and_logged(self):
-        (_, _, files), _ = self._run_fetch(
+        (_, _, files, _), _ = self._run_fetch(
             {'A.sublime-settings': 'http://a'}, http=_resp(429))
         self.assertIsNone(files['A.sublime-settings'])
 
     def test_unchanged_revision_skips_all_raw_fetches(self):
         # Regression: an idle poll whose gist revision matches the last one
         # observed must not re-download any file bytes via raw_url.
-        (rev, _, files), get_req = self._run_fetch(
+        (rev, _, files, _), get_req = self._run_fetch(
             {'A.sublime-settings': 'http://a',
              'Big.sublime-settings': 'http://b'}, last_rev='r2')
         self.assertEqual(rev, 'r2')
         self.assertEqual(files, {})
         # Only the one listing call happened; zero per-file raw downloads.
         get_req.assert_not_called()
+
+    def test_unchanged_revision_only_fetches_required_keys(self):
+        # The pending-key retry path: on an unchanged revision only the named
+        # keys' raw_urls are requested, never the whole gist.
+        responses = {'http://a': _resp(200, 'x'),
+                     'http://b': _resp(200, 'big')}
+        (rev, _, files, _), get_req = self._run_fetch(
+            {'A.sublime-settings': 'http://a',
+             'Big.sublime-settings': 'http://b'},
+            http=lambda url, **kw: responses[url], last_rev='r2',
+            require={'A.sublime-settings'})
+        self.assertEqual(rev, 'r2')
+        self.assertEqual(files, {'A.sublime-settings': 'x'})
+        self.assertEqual([c.args[0] for c in get_req.call_args_list],
+                         ['http://a'])
+
+    def test_name_map_canonicalises_foreign_filenames(self):
+        (_, _, _, names), _ = self._run_fetch(
+            {'sub/C.sublime-settings': 'http://c'},
+            http=lambda url, **kw: _resp(200, 'x'), last_rev='r1')
+        self.assertEqual(names, {'sub%2FC.sublime-settings':
+                                 ['sub/C.sublime-settings']})
 
     def test_changed_revision_uses_gist_client_proxies(self):
         _, get_req = self._run_fetch(
@@ -542,7 +722,7 @@ class TestFetchRemote(unittest.TestCase):
         # 'sub/C.sublime-settings'; the internal key must be the encoded form
         # so it matches the local scan (path.encode('sub/C.sublime-settings'))
         # instead of re-syncing every cycle.
-        (rev, _, files), _ = self._run_fetch(
+        (rev, _, files, _), _ = self._run_fetch(
             {'sub/C.sublime-settings': 'http://c'},
             http=lambda url, **kw: _resp(200, 'x'), last_rev='r1')
         self.assertEqual(files, {'sub%2FC.sublime-settings': 'x'})
@@ -613,8 +793,9 @@ class TestStatePersistence(unittest.TestCase):
     @mock.patch('sync_settings_reborn.auto_sync.version.update_config_file')
     @mock.patch('sync_settings_reborn.auto_sync.version.get_local_version',
                 return_value={'hash': 'r9', 'created_at': 't',
-                              'files': {'A.sublime-settings': 'ha'}})
-    def test_start_restores_persisted_baseline(self, get_ver, update):
+                              'files': {'A.sublime-settings': 'ha'},
+                              'pending': {'B.sublime-settings': 2}})
+    def test_start_restores_persisted_baseline_and_pending(self, get_ver, update):
         svc = auto_sync.AutoSync()
         with mock.patch('sync_settings_reborn.auto_sync.settings.get',
                         return_value=None):
@@ -622,18 +803,34 @@ class TestStatePersistence(unittest.TestCase):
         try:
             self.assertEqual(svc._last_seen_remote, 'r9')
             self.assertEqual(svc._last_synced, {'A.sublime-settings': 'ha'})
+            self.assertEqual(svc._pending, {'B.sublime-settings': 2})
         finally:
             svc.stop()
 
+    @mock.patch('sync_settings_reborn.auto_sync.version.get_local_version',
+                return_value={'hash': 'r9', 'files': {'A': 'ha'},
+                              'pending': {'ok': 3, 'zero': 0, 'bad': 'x'}})
+    def test_load_state_validates_pending_entries(self, _get):
+        rev, files, pending = auto_sync._load_state()
+        self.assertEqual((rev, files), ('r9', {'A': 'ha'}))
+        self.assertEqual(pending, {'ok': 3})
+
+    @mock.patch('sync_settings_reborn.auto_sync.version.get_local_version',
+                return_value=None)
+    def test_load_state_without_state_file(self, _get):
+        self.assertEqual(auto_sync._load_state(), (None, {}, {}))
+
     @mock.patch('sync_settings_reborn.auto_sync.version.update_config_file')
-    def test_persist_includes_files_baseline(self, update):
+    def test_persist_includes_files_baseline_and_pending(self, update):
         svc = auto_sync.AutoSync()
         svc._last_seen_remote = 'r3'
         svc._last_committed_at = 'tt'
         svc._last_synced = {'A': 'h'}
+        svc._pending = {'B': 3}
         svc._persist_state()
         update.assert_called_once_with({
-            'hash': 'r3', 'created_at': 'tt', 'files': {'A': 'h'}})
+            'hash': 'r3', 'created_at': 'tt',
+            'files': {'A': 'h'}, 'pending': {'B': 3}})
 
 
 class TestStartStop(unittest.TestCase):

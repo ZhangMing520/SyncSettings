@@ -268,9 +268,12 @@ class UploadCommandTest(unittest.TestCase):
             self.cmd.upload(installed={'LSP'})
         m_get.assert_called_once_with(installed={'LSP'})
 
-    def _upload_with_baseline(self, remote_names, baseline, file_exists):
+    def _upload_with_baseline(self, remote_names, baseline, file_exists,
+                              local_files=None):
         """Run Upload against a stubbed gist and return the files map actually
-        sent on PATCH. Local upload set always contains a.sublime-settings."""
+        sent on PATCH. Local upload set defaults to a.sublime-settings."""
+        if local_files is None:
+            local_files = {'a.sublime-settings': {'content': '{}'}}
         api = mock.MagicMock()
         api.get.return_value = {
             'files': {name: {'content': '{}'} for name in remote_names},
@@ -279,7 +282,7 @@ class UploadCommandTest(unittest.TestCase):
             'id': 'g1', 'history': [{'version': 'v', 'committed_at': 't'}]}
         with mock.patch.object(
                 manager, 'get_files',
-                return_value={'a.sublime-settings': {'content': '{}'}}), \
+                return_value=local_files), \
                 mock.patch.object(manager, 'user_file_exists',
                                   return_value=file_exists), \
                 mock.patch.object(gist.Gist, 'from_settings', return_value=api), \
@@ -329,6 +332,29 @@ class UploadCommandTest(unittest.TestCase):
             {'a.sublime-settings': 'ha', 'c.sublime-settings': 'hc'},
             file_exists=True)
         self.assertNotIn('c.sublime-settings', sent)
+
+    def test_upload_renames_foreign_literal_name_to_canonical(self):
+        # Regression: another tool stored 'sub/C.sublime-settings' (literal
+        # separator); an upload of the encoded local key must RENAME the gist
+        # file in place, not create a second '%2F' twin.
+        key = 'sub%2FC.sublime-settings'
+        sent = self._upload_with_baseline(
+            ['sub/C.sublime-settings'], {key: 'hc'}, file_exists=True,
+            local_files={key: {'content': '{}'}})
+        self.assertEqual(sent, {
+            'sub/C.sublime-settings': {'filename': key, 'content': '{}'}})
+
+    def test_upload_deleting_foreign_file_nulls_literal_remote_name(self):
+        # The locally deleted foreign file must null the name the gist really
+        # carries; nulling only the encoded key would miss it and the file
+        # would be resurrected by the next background merge.
+        key = 'sub%2FC.sublime-settings'
+        sent = self._upload_with_baseline(
+            ['a.sublime-settings', 'sub/C.sublime-settings'],
+            {'a.sublime-settings': 'ha', key: 'hc'}, file_exists=False)
+        self.assertEqual(sent['a.sublime-settings'], {'content': '{}'})
+        self.assertIsNone(sent['sub/C.sublime-settings'])
+        self.assertNotIn(key, sent)
 
 
 if __name__ == '__main__':
