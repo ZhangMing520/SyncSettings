@@ -37,3 +37,15 @@ def report_error(cmd, e):
     logger.exception(e)
     cmd._failed = True
     sublime.message_dialog('SyncSettingsReborn:\n\n{}'.format(str(e)))
+
+
+def report_gist_not_found(e):
+    """Surface a gist 404 with the token-scope guidance shared by every
+    command that talks to the Gist API."""
+    msg = (
+        'SyncSettingsReborn:\n\n'
+        '{}\n\n'
+        'Please check if the access token was created with the gist scope.\n\n'
+        'If the access token is correct, please, delete the value of `gist_id` property manually.'
+    )
+    sublime.message_dialog(msg.format(str(e)))

@@ -42,12 +42,28 @@
     // --- Offline zip backup / restore (PackageSync-style) ---
     // When `prompt_for_location` is true, the backup/restore commands ask for a
     // path; otherwise they use `backup_path` (empty falls back to ~/SyncSettingsReborn.zip)
+    //
+    // "Backup Package List" always writes a separate file with a `-packages`
+    // suffix (~/SyncSettingsReborn-packages.zip), so it can never overwrite a
+    // full zip backup.
     "prompt_for_location": true,
     "backup_path": "",
 
     // On restore, union the incoming `installed_packages` with the local list
     // instead of overwriting it, so packages only on this machine are kept
     "preserve_packages": true,
+
+    // When `true`, files belonging to a package that is NOT currently installed
+    // are skipped on upload and in offline backups - covers leftover
+    // `<Package>.sublime-settings` / `.sublime-keymap` / etc. and `<Package>/`
+    // data folders left behind by removed plugins. Global files (Preferences,
+    // Package Control, SyncSettingsReborn) and generic loose files directly in
+    // User are always kept. Note: ANY top-level User subfolder whose name does
+    // not match an installed package is skipped wholesale, including folders
+    // you created yourself (e.g. `Snippets/`), so don't enable this if you keep
+    // personal resources in such folders. Default off so existing behavior is
+    // unchanged until you opt in.
+    "skip_uninstalled_packages": false,
 
     // Directory names (fnmatch patterns) to skip entirely when collecting files
     "ignore_dirs": [],

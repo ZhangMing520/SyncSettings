@@ -1,13 +1,5 @@
 [
     {
-        "caption": "SyncSettingsReborn: Create and Upload",
-        "command": "sync_settings_reborn_create_and_upload"
-    },
-    {
-        "caption": "SyncSettingsReborn: Delete and Create",
-        "command": "sync_settings_reborn_delete_and_create"
-    },
-    {
         "caption": "SyncSettingsReborn: Download",
         "command": "sync_settings_reborn_download"
     },
@@ -17,10 +9,7 @@
     },
     {
         "caption": "SyncSettingsReborn: Delete",
-        "command": "sync_settings_reborn_delete_and_create",
-        "args": {
-            "create": false
-        }
+        "command": "sync_settings_reborn_delete"
     },
     {
         "caption": "SyncSettingsReborn: Show Logs",

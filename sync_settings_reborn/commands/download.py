@@ -23,7 +23,7 @@ class SyncSettingsRebornDownloadCommand(sublime_plugin.WindowCommand):
             local_packages = manager.local_installed_packages()
             missing = set(remote_packages).difference(local_packages)
             if missing:
-                self.window.run_command('advanced_install_package', {'packages': list(missing)})
+                self.window.run_command('advanced_install_package', {'packages': sorted(missing)})
         except Exception as e:
             logger.warning('skipping package installation')
             logger.exception(e)
@@ -44,11 +44,7 @@ class SyncSettingsRebornDownloadCommand(sublime_plugin.WindowCommand):
 
     def download(self):
         try:
-            g = Gist(
-                token=settings.get('access_token'),
-                http_proxy=settings.get('http_proxy'),
-                https_proxy=settings.get('https_proxy')
-            ).get(settings.get('gist_id'))
+            g = Gist.from_settings().get(settings.get('gist_id'))
             files = g.get('files') or {}
             if not files:
                 logger.warning('The gist `{}` contains no files.'.format(settings.get('gist_id')))

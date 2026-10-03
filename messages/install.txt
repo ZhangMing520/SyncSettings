@@ -22,7 +22,7 @@ Getting started
 3. **else**
     1. Create an access token at https://github.com/settings/tokens/new with the `gist` scope checked.
     2. Put the token in the `access_token` setting.
-    3. Run `SyncSettingsReborn: Create and Upload`.
+    3. Run `SyncSettingsReborn: Upload` (it creates a new Gist the first time, then updates it on later runs).
 
 Issues
 

@@ -9,6 +9,11 @@ import unittest
 from sync_settings_reborn import backup
 from sync_settings_reborn import sync_manager as manager
 from sync_settings_reborn.commands import sync_online
+from sync_settings_reborn.commands import download
+from sync_settings_reborn.commands import upload
+from sync_settings_reborn import sync_version as version
+from sync_settings_reborn.libs import gist
+from sync_settings_reborn.libs import settings
 
 
 class BackupHelpersTest(unittest.TestCase):
@@ -22,6 +27,29 @@ class BackupHelpersTest(unittest.TestCase):
     def test_default_backup_path_uses_setting(self):
         with mock.patch.object(backup.settings, 'get', return_value='/tmp/x.zip'):
             self.assertEqual(backup.default_backup_path(), '/tmp/x.zip')
+
+    def test_packages_backup_does_not_collide_with_full(self):
+        # Regression: both commands used to resolve to ~/SyncSettingsReborn.zip,
+        # so `Backup Package List` silently overwrote a full backup.
+        with mock.patch.object(backup.settings, 'get', return_value=None):
+            full = backup.default_backup_path()
+            packages = backup.default_backup_path(packages_only=True)
+        self.assertNotEqual(full, packages)
+        self.assertEqual(packages, os.path.join(os.path.expanduser('~'), 'SyncSettingsReborn-packages.zip'))
+
+    def test_packages_backup_derives_from_configured_path(self):
+        with mock.patch.object(backup.settings, 'get', return_value='/tmp/x.zip'):
+            self.assertEqual(
+                backup.default_backup_path(packages_only=True),
+                '/tmp/x-packages.zip',
+            )
+
+    def test_packages_backup_adds_extension_when_missing(self):
+        with mock.patch.object(backup.settings, 'get', return_value='/tmp/backup'):
+            self.assertEqual(
+                backup.default_backup_path(packages_only=True),
+                '/tmp/backup-packages.zip',
+            )
 
     def test_preserve_packages_default_true(self):
         with mock.patch.object(backup.settings, 'get', return_value=None):
@@ -100,6 +128,152 @@ class ExcludedFilesBasenameTest(unittest.TestCase):
     )
     def test_bare_pattern_matches_basename(self):
         self.assertTrue(manager.should_exclude('/Packages/User/sub/secret.txt'))
+
+
+class InstalledPackagesHelpersTest(unittest.TestCase):
+    """Guard the public helper API so a name mismatch (private vs public) can
+    never silently break the Download package-install step again."""
+
+    def test_from_content_parses(self):
+        self.assertEqual(
+            manager.installed_packages_from_content('{"installed_packages": ["A", "B"]}'),
+            ['A', 'B'],
+        )
+
+    def test_from_content_empty(self):
+        self.assertEqual(manager.installed_packages_from_content(''), [])
+
+    def test_from_content_non_dict(self):
+        self.assertEqual(manager.installed_packages_from_content('[1, 2]'), [])
+
+    def test_from_content_non_list_value(self):
+        self.assertEqual(manager.installed_packages_from_content('{"installed_packages": "x"}'), [])
+
+    def test_local_returns_list(self):
+        self.assertIsInstance(manager.local_installed_packages(), list)
+
+
+class DownloadCommandTest(unittest.TestCase):
+    """Exercises the Download package-install path end to end with the network
+    and Gist stubbed. This is the exact code that crashed with AttributeError
+    when the helpers were defined privately but called publicly."""
+
+    def setUp(self):
+        self.cmd = download.SyncSettingsRebornDownloadCommand()
+        self.cmd.window = mock.MagicMock()
+        self.cmd._failed = False
+
+    def test_install_missing_packages_calls_advanced_install(self):
+        with mock.patch.object(manager, 'local_installed_packages', return_value=['A', 'B']):
+            self.cmd._install_missing_packages(['A', 'B', 'C', 'D'])
+        self.cmd.window.run_command.assert_called_once_with(
+            'advanced_install_package', {'packages': ['C', 'D']}
+        )
+
+    def test_install_missing_packages_empty_diff_no_call(self):
+        with mock.patch.object(manager, 'local_installed_packages', return_value=['A', 'B']):
+            self.cmd._install_missing_packages(['A', 'B'])
+        self.cmd.window.run_command.assert_not_called()
+
+    def test_download_restores_then_installs(self):
+        fake_gist = {
+            'id': 'g1',
+            'files': {'x.sublime-settings': {'raw_url': 'http://u'}},
+            'history': [{'version': 'v', 'committed_at': 't'}],
+        }
+        with mock.patch.object(download.Gist, 'get', return_value=fake_gist), \
+                mock.patch.object(manager, 'fetch_files') as m_fetch, \
+                mock.patch.object(manager, 'get_content', return_value='{"installed_packages": ["C"]}'), \
+                mock.patch.object(manager, 'installed_packages_from_content', return_value=['C']), \
+                mock.patch.object(manager, 'local_installed_packages', return_value=['A']), \
+                mock.patch.object(manager, 'move_files') as m_move:
+            self.cmd.download()
+        m_fetch.assert_called_once()
+        m_move.assert_called_once()
+        self.cmd.window.run_command.assert_called_once_with(
+            'advanced_install_package', {'packages': ['C']}
+        )
+
+
+class BackupSkipUninstalledTest(unittest.TestCase):
+    """The zip backup path must honour skip_uninstalled_packages just like the
+    Gist path; it used to ignore the option entirely."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.user = os.path.join(self.tmp, 'User')
+        os.makedirs(self.user)
+        self.patcher = mock.patch.object(backup.manager.sublime, 'packages_path', lambda: self.tmp)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write(self, rel):
+        with open(os.path.join(self.user, rel), 'w') as f:
+            f.write('{}')
+
+    def test_leftovers_excluded(self):
+        for rel in ('PackageSync.sublime-settings', 'LSP.sublime-settings', 'Preferences.sublime-settings'):
+            self._write(rel)
+        result = backup.collect_files(installed={'LSP'})
+        self.assertNotIn(os.path.join('PackageSync.sublime-settings'), result)
+        self.assertIn(os.path.join('LSP.sublime-settings'), result)
+        self.assertIn(os.path.join('Preferences.sublime-settings'), result)
+
+    def test_kept_when_no_snapshot(self):
+        self._write('PackageSync.sublime-settings')
+        result = backup.collect_files(installed=None)
+        self.assertIn(os.path.join('PackageSync.sublime-settings'), result)
+
+
+class UploadCommandTest(unittest.TestCase):
+    """Guard the redesign: Upload must create when there is no gist_id and
+    update when there is one, and must backfill gist_id after creating."""
+
+    def setUp(self):
+        self.cmd = upload.SyncSettingsRebornUploadCommand()
+        self.cmd.window = mock.MagicMock()
+        self.cmd._failed = False
+
+    def test_upload_creates_when_no_gist_id(self):
+        fake_gist = {
+            'id': 'new-gist',
+            'history': [{'version': 'v', 'committed_at': 't'}],
+        }
+        with mock.patch.object(manager, 'get_files', return_value={'a.sublime-settings': {'content': '{}'}}), \
+                mock.patch.object(gist.Gist, 'create', return_value=fake_gist) as m_create, \
+                mock.patch.object(gist.Gist, 'update') as m_update, \
+                mock.patch.object(settings, 'get', side_effect=lambda k: '' if k == 'gist_id' else 'tok'), \
+                mock.patch.object(settings, 'update') as m_set, \
+                mock.patch.object(version, 'update_config_file') as m_ver:
+            self.cmd.upload()
+        m_create.assert_called_once()
+        m_update.assert_not_called()
+        m_set.assert_called_with('gist_id', 'new-gist')
+        m_ver.assert_called_once()
+
+    def test_upload_updates_when_gist_id_present(self):
+        fake_gist = {
+            'id': 'g1',
+            'history': [{'version': 'v', 'committed_at': 't'}],
+        }
+        with mock.patch.object(manager, 'get_files', return_value={'a.sublime-settings': {'content': '{}'}}), \
+                mock.patch.object(gist.Gist, 'update', return_value=fake_gist) as m_update, \
+                mock.patch.object(gist.Gist, 'create') as m_create, \
+                mock.patch.object(settings, 'get', side_effect=lambda k: 'g1' if k == 'gist_id' else 'tok'):
+            self.cmd.upload()
+        m_update.assert_called_once_with('g1', data=mock.ANY)
+        m_create.assert_not_called()
+
+    def test_upload_forwards_main_thread_snapshot(self):
+        # run() takes the list_packages() snapshot on the main thread; the worker
+        # must receive it instead of calling list_packages() itself.
+        with mock.patch.object(manager, 'get_files', return_value={}) as m_get, \
+                mock.patch.object(settings, 'get', return_value='tok'):
+            self.cmd.upload(installed={'LSP'})
+        m_get.assert_called_once_with(installed={'LSP'})
 
 
 if __name__ == '__main__':

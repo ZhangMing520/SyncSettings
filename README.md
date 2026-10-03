@@ -49,7 +49,7 @@ Please, follow the steps below to getting started with [SyncSettingsReborn](http
 
 Besides the default **GitHub Gist** backend, Reborn also offers PackageSync-style ways to sync:
 
-- **Offline Zip backup / restore** — `SyncSettingsReborn: Backup to Zip` and `Restore from Zip` produce a portable archive of your `Packages/User` (your `access_token` is never included).
+- **Offline Zip backup / restore** — `SyncSettingsReborn: Backup to Zip` and `Restore from Zip` produce a portable archive of your `Packages/User`. The zip is a local, offline export, so it is not filtered for secrets — treat the file as sensitive. Restore is the exact inverse of backup: whatever the archive contains is written back.
 - **Backup Package List** — back up only the installed package list.
 - **Sync Online (Dropbox / Google Drive / OneDrive)** — `Define Folder`, `Push`, `Pull` commands move a zip in/out of any cloud-synced folder, no background process required.
 
@@ -66,7 +66,7 @@ On restore, `preserve_packages` (default `true`) merges the incoming `installed_
 4. **else**
     1. Create an access token [here](https://github.com/settings/tokens/new) with `gist` scope checked.
     2. Put the token in the config file (`access_token` property)
-    3. Run `SyncSettingsReborn: Create and Upload` command
+    3. Run `SyncSettingsReborn: Upload` command (it creates a new Gist the first time, then updates it on every later run)
     
 ### File Format
 
@@ -92,21 +92,48 @@ By default, this plugin operates over [Sublime Text](https://www.sublimetext.com
 | `https_proxy`  | `string` | An HTTPS proxy server to use for requests. |
 | `excluded_files`  | `[]string` | In simple words, this option is a black list. Which means, every file that match with the defined pattern, will be ignored on sync. |
 | `included_files`  | `[]string` | In simple words, this option is a white list. Which means, every file that match with the defined pattern, will be included on sync, even if it was included on `excluded_files` option. |
+| `skip_uninstalled_packages`  | `boolean` | If `true`, files belonging to a package that is **not currently installed** are skipped on upload — covers leftover `<Package>.sublime-settings`/`.sublime-keymap`/etc. and `<Package>/` data folders left behind by removed plugins. Global files (`Preferences`, `Package Control`, `SyncSettingsReborn`) are always kept. Default `false`. |
 
 > Note: `excluded_files` and `included_files` are patterns defined as [unix shell style](https://tldp.org/LDP/GNU-Linux-Tools-Summary/html/x11655.htm).
 
 
 ## Commands
 
+### GitHub Gist (cloud sync)
+
 | command | description |
 |---|---|
-|**SyncSettingsReborn: Create and Upload**|Creates a new backup on `gist.github.com` from your local files|
-|**SyncSettingsReborn: Delete and Create**|Deletes the remote reference of your gist and then, creates a new backup from your local files to `gist.github.com`|
-|**SyncSettingsReborn: Upload**|Upload a backup from your local files to `gist.github.com`|
-|**SyncSettingsReborn: Download**|Retrieves the latest version of your backup, using as reference the `gist_id` property defined in your settings file.|
-|**SyncSettingsReborn: Delete**|Deletes the remote version of your gist, using as reference the `gist_id` property defined in your settings file. (This action is irreversible)|
-|**SyncSettingsReborn: Show Logs**|Open a new view, with `SyncSettingsReborn` log file|
-|**SyncSettingsReborn: Edit User Settings**|Open a new view, with `SyncSettingsReborn` user settings.|
+| **SyncSettingsReborn: Upload** | Creates a Gist the first time (when `gist_id` is empty) and updates it on every later run. No prompts — the new gist id is saved automatically. |
+| **SyncSettingsReborn: Download** | Restores the latest backup from the `gist_id` in your settings into `Packages/User`. |
+| **SyncSettingsReborn: Delete** | Deletes the remote Gist (this action is irreversible) and clears the saved `gist_id`. |
+
+> **Resetting your backup:** Run `SyncSettingsReborn: Delete` (clears the saved
+> `gist_id`), then `SyncSettingsReborn: Upload` — Upload will create a fresh Gist
+> with your current files in one click, with no description prompt or `gist_id`
+> question.
+
+### Offline Zip / Package list
+
+| command | description |
+|---|---|
+| **SyncSettingsReborn: Backup to Zip** | Pack `Packages/User` into a portable zip (no network required). |
+| **SyncSettingsReborn: Restore from Zip** | Restore `Packages/User` from a zip archive. |
+| **SyncSettingsReborn: Backup Package List** | Export only the installed-package list (`installed_packages`). |
+
+### Sync Online (Dropbox / Google Drive / OneDrive)
+
+| command | description |
+|---|---|
+| **SyncSettingsReborn: Sync Online - Define Folder** | Choose a cloud-synced folder to use as the sync location. |
+| **SyncSettingsReborn: Sync Online - Push** | Push a settings zip into that folder. |
+| **SyncSettingsReborn: Sync Online - Pull** | Pull and restore a settings zip from that folder. |
+
+### Utilities
+
+| command | description |
+|---|---|
+| **SyncSettingsReborn: Show Logs** | Open the `SyncSettingsReborn` log file for troubleshooting. |
+| **SyncSettingsReborn: Edit User Settings** | Open the plugin's user settings file. |
 
 ## Contributors
 

@@ -1,8 +1,7 @@
-from .create_and_upload import SyncSettingsRebornCreateAndUploadCommand
+from .delete import SyncSettingsRebornDeleteCommand
 from .download import SyncSettingsRebornDownloadCommand
 from .upload import SyncSettingsRebornUploadCommand
 from .open_logs import SyncSettingsRebornOpenLogsCommand
-from .delete_and_create import SyncSettingsRebornDeleteAndCreateCommand
 from .backup import SyncSettingsRebornBackupCommand, SyncSettingsRebornBackupPackageListCommand
 from .restore import SyncSettingsRebornRestoreCommand
 from .sync_online import (
@@ -12,11 +11,10 @@ from .sync_online import (
 )
 
 __all__ = [
-    'SyncSettingsRebornCreateAndUploadCommand',
+    'SyncSettingsRebornDeleteCommand',
     'SyncSettingsRebornDownloadCommand',
     'SyncSettingsRebornUploadCommand',
     'SyncSettingsRebornOpenLogsCommand',
-    'SyncSettingsRebornDeleteAndCreateCommand',
     'SyncSettingsRebornBackupCommand',
     'SyncSettingsRebornBackupPackageListCommand',
     'SyncSettingsRebornRestoreCommand',

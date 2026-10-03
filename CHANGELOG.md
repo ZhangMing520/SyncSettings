@@ -1,3 +1,38 @@
+## Unreleased — command redesign
+
+- **`Upload` is now create-or-update.** When `gist_id` is empty it creates a new
+  Gist and saves the id automatically; when `gist_id` is set it updates that
+  Gist. No description prompt and no "backfill gist_id?" question.
+- Removed `Create and Upload` (superseded by the new `Upload`).
+- Removed `Delete and Create`. Resetting is now a two-step, prompt-free flow:
+  `Delete` (clears the saved `gist_id`) followed by `Upload` (creates a fresh
+  Gist).
+- Added a standalone `Delete` command that deletes the remote Gist and clears
+  the saved `gist_id` / version info.
+- **Never upload a GitHub token.** The rule is applied to file *contents*, not
+  to a hard-coded file name: any file carrying a GitHub token (`ghp_` / `gho_` /
+  `ghu_` / `ghs_` / `ghr_` / `github_pat_`) is skipped when uploading to the
+  Gist — the only direction where a secret would leave your machine. Previously
+  only *this* plugin's settings file was protected by name, so leftovers from
+  removed plugins (e.g. `PackageSync.sublime-settings`) could leak a token into a
+  gist, which made GitHub secret scanning silently revoke it.
+- Removed the hard-coded `SyncSettingsReborn.sublime-settings` exclusion. No file
+  name is special-cased any more, so a config file is judged only by the
+  exclude/include patterns and, for uploads, by content. As a result the offline
+  zip now contains that file too (`gist_id` and your preferences are backed up).
+- Restore is now the exact inverse of backup: files are written back as they
+  arrive, with no token filtering. Filtering there would mean a file could be
+  backed up but never restored, and the upload rule already guarantees the Gist
+  cannot carry a token.
+- Fixed `Backup Package List` overwriting a full zip backup: it now always writes
+  a separate `-packages` file (`~/SyncSettingsReborn-packages.zip`).
+- Fixed `skip_uninstalled_packages` being ignored by the zip backup / package
+  list commands; it now applies to every backup path, not just the Gist upload.
+- Fixed `skip_uninstalled_packages` silently doing nothing: `list_packages()`
+  raises when called from the upload/backup worker thread, which degraded to
+  "keep every file". The package list is now snapshotted on the main thread and
+  passed to the worker.
+
 ## v4.1.0 — PackageSync-style sync
 
 Added sync capabilities alongside the existing GitHub Gist backend:

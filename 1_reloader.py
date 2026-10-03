@@ -76,8 +76,7 @@ mods_load_order = [
     '.commands.open_logs',
     '.commands.download',
     '.commands.upload',
-    '.commands.create_and_upload',
-    '.commands.delete_and_create',
+    '.commands.delete',
 ]
 
 loaders = dict()

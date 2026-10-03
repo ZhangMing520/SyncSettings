@@ -65,6 +65,8 @@ sublime.active_window = lambda *a, **k: None
 sublime.set_timeout = lambda fn, *a, **k: None  # do not execute deferred work
 sublime.version = lambda: '4143'
 sublime.packages_path = lambda: '/tmp'
+sublime.installed_packages_path = lambda: '/tmp/Installed Packages'
+sublime.list_packages = lambda: []
 
 sublime.load_settings = load_settings
 sublime.save_settings = save_settings

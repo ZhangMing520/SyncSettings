@@ -36,6 +36,7 @@ Getting started
 1. Run `SyncSettingsReborn: Edit User Settings`
 2. If you already have a gist, set `gist_id` and run `SyncSettingsReborn: Download`.
    Otherwise create a GitHub token with the `gist` scope, set `access_token`,
-   and run `SyncSettingsReborn: Create and Upload`.
+   and run `SyncSettingsReborn: Upload` (it creates a new Gist the first time,
+   then updates it on later runs).
 
 Report issues at: https://github.com/ZhangMing520/SyncSettingsReborn/issues

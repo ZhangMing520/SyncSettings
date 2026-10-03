@@ -6,6 +6,7 @@ import requests
 from functools import wraps
 
 from .logger import logger
+from . import settings
 
 
 class NotFoundError(RuntimeError):
@@ -53,6 +54,15 @@ class Gist:
         self.token = token
         self.http_proxy = http_proxy
         self.https_proxy = https_proxy
+
+    @classmethod
+    def from_settings(cls):
+        """Build a client from the plugin's stored token/proxy settings."""
+        return cls(
+            token=settings.get('access_token'),
+            http_proxy=settings.get('http_proxy'),
+            https_proxy=settings.get('https_proxy'),
+        )
 
     @staticmethod
     def make_uri(endpoint=''):

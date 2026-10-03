@@ -3,6 +3,7 @@
 from fnmatch import fnmatch
 import os
 import json
+import re
 import requests
 import shutil
 import sublime
@@ -47,18 +48,31 @@ def _as_patterns(key):
     return list(patterns)
 
 
-def _is_token(file_name):
-    """True for the file that holds the Gist access_token.
+# GitHub's own token prefixes: ghp_ (personal), gho_ (OAuth), ghu_ (user to
+# server), ghs_ (server to server), ghr_ (refresh), plus the fine-grained
+# github_pat_ form. Leaking any of these into a gist makes GitHub's secret
+# scanning silently revoke the token, which is exactly the failure this guards
+# against. Only GitHub prefixes are matched on purpose: broadening this to other
+# providers would catch nothing real here while risking false positives on
+# ordinary settings values.
+_GITHUB_TOKEN_RE = re.compile(r'(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})')
 
-    Compared case-insensitively so the token can never be backed up or restored
-    on any platform (fnmatch is case-sensitive on Linux).
+
+def contains_github_token(content):
+    """True when `content` looks like it holds a GitHub token.
+
+    This content rule — not a hard-coded file name — is what keeps a secret out
+    of the Gist: any file carrying a token is skipped on upload. The filter is
+    upload-only by design: restore (and the offline zip backup) is the inverse
+    of a full local mirror and writes files back as they arrive, so the plugin's
+    own settings file can be backed up and restored like any other.
     """
-    return os.path.basename(file_name).lower() == settings.filename.lower()
+    if not content:
+        return False
+    return _GITHUB_TOKEN_RE.search(content) is not None
 
 
 def should_exclude(file_name):
-    if _is_token(file_name):
-        return True
     basename = os.path.basename(file_name)
     patterns = _as_patterns('excluded_files')
     dir_patterns = _as_patterns('ignore_dirs')
@@ -78,8 +92,6 @@ def _matches(patterns, name, basename):
 
 
 def should_include(file_name):
-    if _is_token(file_name):
-        return False
     basename = os.path.basename(file_name)
     patterns = _as_patterns('included_files')
     return _matches(patterns, file_name, basename)
@@ -93,19 +105,148 @@ def is_synced(file_name):
     return not (should_exclude(file_name) and not should_include(file_name))
 
 
-def get_files():
-    files_with_content = dict()
+# Global files/dirs not tied to a single installed package that must always be
+# kept, even when skip_uninstalled_packages is enabled. The plugin's own name
+# is derived from its settings file so a rename cannot make this set stale.
+_GLOBAL_SETTINGS = {
+    'Preferences',
+    'Package Control',
+    os.path.splitext(settings.filename)[0],
+}
+
+# File types that are conventionally named `<PackageName>.<ext>` and therefore
+# attributable to a specific package (so a leftover from an uninstalled package
+# can be identified and skipped). Generic files (.txt, .sublime-project, etc.)
+# are not in this set and are never skipped by this option.
+_PACKAGE_SCOPED_EXTS = {
+    '.sublime-settings', '.sublime-keymap', '.sublime-commands',
+    '.sublime-mousemap', '.sublime-menu',
+}
+
+
+def should_skip_uninstalled(rel_path, installed):
+    """True when `rel_path` (relative to User) belongs to a package that is
+    not currently installed.
+
+    Covers `<Package>.<ext>` files directly in User (for package-scoped exts)
+    and files inside a `<Package>/` data directory, so a removed plugin's
+    leftovers (settings file and/or data dir) are both skipped. Generic top-level
+    files and the whitelisted globals are never skipped.
+
+    `installed` being empty/None means "do not filter": a failed snapshot must
+    never turn into "every package-scoped file looks uninstalled".
+    """
+    if not installed:
+        return False
+    parts = [p for p in rel_path.split(path.separator()) if p]
+    if not parts:
+        return False
+    if len(parts) == 1:
+        component, ext = os.path.splitext(parts[0])
+        if ext not in _PACKAGE_SCOPED_EXTS:
+            return False
+    else:
+        component = parts[0]
+    if component in _GLOBAL_SETTINGS:
+        return False
+    return component not in installed
+
+
+def _packages_on_disk():
+    """Package names derived from the filesystem.
+
+    Version-independent (some Sublime builds expose no package-listing API at
+    all) and, unlike Package Control's list, it also sees packages that were
+    placed by hand — a symlinked checkout, for instance:
+    `Installed Packages/<Name>.sublime-package` and `Packages/<Name>/`.
+    """
+    names = set()
+    try:
+        for entry in os.listdir(sublime.installed_packages_path()):
+            if entry.endswith('.sublime-package'):
+                names.add(os.path.splitext(entry)[0])
+    except Exception as e:
+        logger.debug('cannot list Installed Packages: {}'.format(e))
+    try:
+        packages_dir = sublime.packages_path()
+        for entry in os.listdir(packages_dir):
+            if entry == 'User':
+                continue  # the user's own config dir, not a package
+            full = os.path.join(packages_dir, entry)
+            if os.path.isdir(full):
+                names.add(entry)
+            elif entry.endswith('.sublime-package'):
+                names.add(os.path.splitext(entry)[0])
+    except Exception as e:
+        logger.debug('cannot list Packages: {}'.format(e))
+    return names
+
+
+def installed_packages_snapshot():
+    """Snapshot of currently installed package names, or None to not filter.
+
+    Several sources are unioned because none is complete on its own: Package
+    Control's `installed_packages` misses manually placed packages, the
+    filesystem check works on every build, and `sublime.list_packages()` is
+    absent on some builds. Returns None when the option is off or every source
+    comes up empty, so a failure filters nothing rather than everything.
+    """
+    if not settings.get('skip_uninstalled_packages'):
+        return None
+    names = set(local_installed_packages())
+    names |= _packages_on_disk()
+    lister = getattr(sublime, 'list_packages', None)
+    if callable(lister):
+        try:
+            names.update(lister())
+        except Exception as e:
+            logger.warning('sublime.list_packages() failed; '
+                           'ignoring that source')
+            logger.exception(e)
+    return names or None
+
+
+def resolve_installed(installed=None):
+    """Normalize a caller-supplied snapshot, taking one if none was given."""
+    if installed is None:
+        return installed_packages_snapshot()
+    return installed or None
+
+
+def iter_user_files(installed=None):
+    """Yield (absolute_path, rel_path) for each file under Packages/User that
+    passes the shared sync filters (exclude/include + uninstalled-package).
+
+    Both exporters — the Gist upload and the offline zip — build on this so
+    they can never silently diverge in which files they collect.
+    """
     user_path = path.join(sublime.packages_path(), 'User')
+    installed = resolve_installed(installed)
+    seen = set()
     for f in path.list_files(user_path):
-        encoded_path = path.encode(f.replace('{}{}'.format(user_path, path.separator()), ''))
-        if encoded_path in files_with_content:
+        rel = f.replace('{}{}'.format(user_path, path.separator()), '')
+        encoded = path.encode(rel)
+        if encoded in seen:
             continue
+        seen.add(encoded)
         if not is_synced(f):
             continue
+        if should_skip_uninstalled(rel, installed):
+            logger.info('skipping file for uninstalled package: {}'.format(rel))
+            continue
+        yield f, rel
+
+
+def get_files(installed=None):
+    files_with_content = dict()
+    for f, rel in iter_user_files(installed):
         content = get_content(f)
         if not content.strip():
             continue
-        files_with_content[encoded_path] = {'content': content, 'path': f}
+        if contains_github_token(content):
+            logger.warning('skipping file that appears to contain a GitHub token: {}'.format(rel))
+            continue
+        files_with_content[path.encode(rel)] = {'content': content, 'path': f}
     return files_with_content
 
 
@@ -173,7 +314,7 @@ def _write_one(user_path, user_real, name, data):
         f.write(data)
 
 
-def _local_installed_packages():
+def local_installed_packages():
     """The package list Package Control currently has recorded locally."""
     try:
         local_settings = sublime.load_settings('Package Control.sublime-settings')
@@ -183,7 +324,7 @@ def _local_installed_packages():
         return []
 
 
-def _installed_packages_from_content(content):
+def installed_packages_from_content(content):
     """Parse the `installed_packages` list out of Package Control settings content."""
     if not content:
         return []
@@ -209,7 +350,7 @@ def _merge_installed_packages(data):
     remote_list = parsed.get('installed_packages') or []
     if not isinstance(remote_list, list):
         remote_list = []
-    parsed['installed_packages'] = sorted(set(remote_list) | set(_local_installed_packages()))
+    parsed['installed_packages'] = sorted(set(remote_list) | set(local_installed_packages()))
     return json.dumps(parsed, indent=4).encode('utf-8')
 
 
@@ -225,10 +366,6 @@ def write_user_files(files, preserve_packages=True):
     deferred = {}
     for key, data in files.items():
         name = path.decode(key)
-        # Defense in depth: never let a foreign backup clobber the access token.
-        if _is_token(name):
-            logger.warning('skipping token file in backup: {}'.format(name))
-            continue
         if name.endswith('Preferences.sublime-settings') or name.endswith('Package Control.sublime-settings'):
             deferred[key] = data
             continue

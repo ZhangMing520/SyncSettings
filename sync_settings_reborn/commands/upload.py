@@ -7,45 +7,50 @@ from . import decorators
 from .. import sync_version as version, sync_manager as manager
 from ..libs import settings
 from ..libs import gist
+from ..libs.logger import logger
 from ..thread_progress import ThreadProgress
 
 
 class SyncSettingsRebornUploadCommand(sublime_plugin.WindowCommand):
-    def upload(self):
-        files = manager.get_files()
+    def upload(self, installed=None):
+        files = manager.get_files(installed=installed)
         if not len(files):
+            logger.warning('no files collected to upload (check exclude/include settings)')
             sublime.status_message('SyncSettingsReborn: there are not files to upload')
             return
+        gid = settings.get('gist_id')
+        logger.info('uploading {} file(s) to gist {}'.format(len(files), gid or '(new)'))
         try:
-            g = gist.Gist(
-                token=settings.get('access_token'),
-                http_proxy=settings.get('http_proxy'),
-                https_proxy=settings.get('https_proxy')
-            ).update(
-                settings.get('gist_id'),
-                data={'files': files}
-            )
+            gist_api = gist.Gist.from_settings()
+            if gid:
+                # Update the existing gist.
+                g = gist_api.update(gid, data={'files': files})
+            else:
+                # No gist yet: create one and remember it so the next upload
+                # updates instead of creating again. No description prompt, no
+                # "backfill gist_id?" question — this is the one-click reset path.
+                g = gist_api.create({'files': files, 'description': 'SyncSettingsReborn backup'})
+                settings.update('gist_id', g['id'])
+                logger.info('created new gist {}'.format(g['id']))
             commit = g['history'][0]
             version.update_config_file({
                 'hash': commit['version'],
                 'created_at': commit['committed_at'],
             })
+            logger.info('upload complete')
         except gist.NotFoundError as e:
-            msg = (
-                'SyncSettingsReborn:\n\n'
-                '{}\n\n'
-                'Please check if the access token was created with the gist scope.\n\n'
-                'If the access token is correct, please, delete the value of `gist_id` property manually.'
-            )
-            sublime.message_dialog(msg.format(str(e)))
+            decorators.report_gist_not_found(e)
         except Exception as e:
             decorators.report_error(self, e)
 
-    @decorators.check_settings('gist_id', 'access_token')
+    @decorators.check_settings('access_token')
     def run(self):
         self._failed = False
+        # sublime.list_packages() only works on the main thread, so take the
+        # snapshot here (run() runs there) and hand it to the worker thread.
+        installed = manager.installed_packages_snapshot()
         ThreadProgress(
-            target=self.upload,
+            target=lambda: self.upload(installed),
             message='uploading files',
             success_message='files uploaded',
             success_when=lambda: not self._failed

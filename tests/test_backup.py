@@ -33,7 +33,7 @@ class BackupZipTest(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.user = os.path.join(self.tmp, 'User')
         os.makedirs(self.user)
-        self.patcher = mock.patch.object(backup.sublime, 'packages_path', lambda: self.tmp)
+        self.patcher = mock.patch.object(backup.manager.sublime, 'packages_path', lambda: self.tmp)
         self.patcher.start()
 
     def tearDown(self):
@@ -58,8 +58,9 @@ class BackupZipTest(unittest.TestCase):
         self.assertIn('Preferences.sublime-settings', keys)
         self.assertIn('Package Control.sublime-settings', keys)
         self.assertIn('MyPackage/foo.py', keys)
-        # token must never be backed up
-        self.assertNotIn('SyncSettingsReborn.sublime-settings', keys)
+        # The zip is a local, offline export: no file name is special-cased, so
+        # the plugin's own settings are part of the archive like any other.
+        self.assertIn('SyncSettingsReborn.sublime-settings', keys)
         self.assertEqual(files['Preferences.sublime-settings'], b'{"font_size": 12}')
 
     def test_backup_packages_only(self):
@@ -84,12 +85,12 @@ class BackupZipTest(unittest.TestCase):
             _write_user(target_user, 'Package Control.sublime-settings',
                         json.dumps({'installed_packages': ['B', 'C']}).encode())
 
-            with mock.patch.object(backup.sublime, 'packages_path', lambda: target):
+            with mock.patch.object(backup.manager.sublime, 'packages_path', lambda: target):
                 # local load_settings 'Package Control.sublime-settings' returns [B, C]
                 local_settings = mock.MagicMock()
                 local_settings.get.return_value = ['B', 'C']
                 with mock.patch.object(
-                    backup.sublime, 'load_settings',
+                    backup.manager.sublime, 'load_settings',
                     return_value=local_settings
                 ):
                     backup.restore_backup_zip(zip_path, preserve_packages=True)
@@ -119,15 +120,18 @@ class BackupZipTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.tmp, 'evil.txt')))
         self.assertTrue(os.path.exists(os.path.join(self.user, 'Preferences.sublime-settings')))
 
-    def test_restore_skips_token_file(self):
-        # A backup that contains the token file must not overwrite the local one.
-        _write_user(self.user, 'SyncSettingsReborn.sublime-settings', b'{"access_token": "ORIGINAL"}')
-        withzip = os.path.join(self.tmp, 'withtoken.zip')
+    def test_restore_writes_back_a_token_carrying_file(self):
+        # Restore is the inverse of backup: whatever the archive holds is written
+        # back. Only *upload* filters tokens, because that is the only direction
+        # where a secret would leave the machine. Blocking here would mean a file
+        # could be backed up but never restored.
+        _write_user(self.user, 'SyncSettingsReborn.sublime-settings', b'{"gist_id": "old"}')
+        withzip = os.path.join(self.tmp, 'restoretoken.zip')
         with zipfile.ZipFile(withzip, 'w') as z:
-            z.writestr('SyncSettingsReborn.sublime-settings', b'{"access_token": "HACKED"}')
+            z.writestr('SyncSettingsReborn.sublime-settings', b'{"access_token": "ghp_' + b'b' * 36 + b'"}')
         backup.restore_backup_zip(withzip, preserve_packages=False)
         with open(os.path.join(self.user, 'SyncSettingsReborn.sublime-settings'), 'rb') as f:
-            self.assertEqual(f.read(), b'{"access_token": "ORIGINAL"}')
+            self.assertEqual(f.read(), b'{"access_token": "ghp_' + b'b' * 36 + b'"}')
 
     @mock.patch.object(backup.manager.settings, 'get', _settings_side_effect(['IgnoredDir'], None))
     def test_collect_files_respects_ignore_dirs(self):
