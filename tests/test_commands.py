@@ -252,7 +252,12 @@ class UploadCommandTest(unittest.TestCase):
         m_create.assert_called_once()
         m_update.assert_not_called()
         m_set.assert_called_with('gist_id', 'new-gist')
-        m_ver.assert_called_once()
+        # Once for gist metadata, once to persist auto-sync's adopted baseline.
+        self.assertEqual(m_ver.call_count, 2)
+        self.assertEqual(m_ver.call_args_list[0][0][0],
+                         {'hash': 'v', 'created_at': 't'})
+        self.assertEqual(m_ver.call_args_list[1][0][0]['files'],
+                         {'a.sublime-settings': mock.ANY})
 
     def test_upload_updates_when_gist_id_present(self):
         fake_gist = {

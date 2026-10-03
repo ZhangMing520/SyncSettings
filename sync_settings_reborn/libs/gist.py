@@ -9,6 +9,20 @@ from .logger import logger
 from . import settings
 
 
+# Bound every request (including the background auto-sync loop) so a hanging
+# connection can never pin a worker thread forever.
+REQUEST_TIMEOUT = 30
+
+# Compiled once: proxies is consulted on every HTTP request.
+_PROXY_URL_RE = re.compile(
+    r'^(?:http)s?://'  # http:// or https://
+    r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'  # domain...
+    r'localhost|'  # localhost...
+    r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
+    r'(?::\d+)?'  # optional port
+    r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+
+
 class NotFoundError(RuntimeError):
     pass
 
@@ -98,7 +112,9 @@ class Gist:
 
     def __do_request(self, verb, url, **kwargs):
         try:
-            response = getattr(requests, verb)(url, headers=self.headers, proxies=self.proxies, **kwargs)
+            response = getattr(requests, verb)(url, headers=self.headers,
+                                               proxies=self.proxies,
+                                               timeout=REQUEST_TIMEOUT, **kwargs)
         except requests.exceptions.RequestException as e:
             raise NetworkError('Can`t perform this action due to network errors. reason: {}'.format(str(e)))
         if response.status_code >= 300:
@@ -125,14 +141,7 @@ class Gist:
     @property
     def proxies(self):
         def check_proxy_url(url):
-            regex = re.compile(
-                r'^(?:http)s?://'  # http:// or https://
-                r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'  # domain...
-                r'localhost|'  # localhost...
-                r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
-                r'(?::\d+)?'  # optional port
-                r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-            return url and isinstance(url, str) and re.match(regex, url) is not None
+            return url and isinstance(url, str) and _PROXY_URL_RE.match(url) is not None
         proxies = dict()
         if check_proxy_url(self.http_proxy):
             proxies['http'] = self.http_proxy

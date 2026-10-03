@@ -70,6 +70,7 @@ mods_load_order = [
     '.thread_progress',
     '.sync_version',
     '.sync_manager',
+    '.auto_sync',
 
     '.commands',
     '.commands.decorators',

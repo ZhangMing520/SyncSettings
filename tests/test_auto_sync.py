@@ -1,0 +1,554 @@
+# -*- coding: utf-8 -*-
+
+import os
+import shutil
+import tempfile
+import unittest
+import mock
+
+from sync_settings_reborn import auto_sync
+from sync_settings_reborn.libs.gist import NotFoundError
+
+
+def _h(content):
+    return auto_sync._sha(content)
+
+
+def _gist(rev='r1'):
+    return {'id': 'g1', 'history': [{'version': rev, 'committed_at': 't'}]}
+
+
+def _files(d):
+    # Shape returned by manager.get_files(): {encoded: {'content':, 'path':}}
+    return {k: {'content': v, 'path': os.path.join('/tmp/User', k)}
+            for k, v in d.items()}
+
+
+class TestShouldAutoSync(unittest.TestCase):
+    @mock.patch('sync_settings_reborn.auto_sync.settings.get')
+    def test_enabled_with_token(self, get):
+        def fake_get(key, default=None):
+            return {'auto_upgrade': True, 'access_token': 'tok'}.get(key, default)
+        get.side_effect = fake_get
+        self.assertTrue(auto_sync.should_auto_sync())
+
+    @mock.patch('sync_settings_reborn.auto_sync.settings.get')
+    def test_disabled_when_option_off(self, get):
+        def fake_get(key, default=None):
+            return {'auto_upgrade': False, 'access_token': 'tok'}.get(key, default)
+        get.side_effect = fake_get
+        self.assertFalse(auto_sync.should_auto_sync())
+
+    @mock.patch('sync_settings_reborn.auto_sync.settings.get')
+    def test_disabled_without_token(self, get):
+        def fake_get(key, default=None):
+            return {'auto_upgrade': True, 'access_token': ''}.get(key, default)
+        get.side_effect = fake_get
+        self.assertFalse(auto_sync.should_auto_sync())
+
+
+class TestInterval(unittest.TestCase):
+    def _svc(self, val):
+        with mock.patch('sync_settings_reborn.auto_sync.settings.get',
+                        side_effect=lambda k, d=None: val if k == 'auto_sync_interval' else d):
+            svc = auto_sync.AutoSync()
+            svc._configure_interval()
+            return svc
+
+    def test_minutes_to_seconds(self):
+        self.assertEqual(self._svc(2)._interval, 120)
+
+    def test_negative_ignored(self):
+        self.assertEqual(self._svc(-1)._interval, auto_sync.DEFAULT_INTERVAL_SECONDS)
+
+    def test_zero_ignored(self):
+        self.assertEqual(self._svc(0)._interval, auto_sync.DEFAULT_INTERVAL_SECONDS)
+
+    def test_subminute_float_ignored(self):
+        # int(0.5) == 0 would otherwise create a zero-timeout busy loop.
+        self.assertEqual(self._svc(0.5)._interval, auto_sync.DEFAULT_INTERVAL_SECONDS)
+
+    def test_garbage_ignored(self):
+        self.assertEqual(self._svc('soon')._interval, auto_sync.DEFAULT_INTERVAL_SECONDS)
+
+
+class TestCurrentHashes(unittest.TestCase):
+    @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                return_value=None)
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    def test_deterministic(self, get_files, _snap):
+        get_files.return_value = {
+            'A.sublime-settings': {'content': 'x', 'path': '/a'},
+            'B.sublime-settings': {'content': 'y', 'path': '/b'},
+        }
+        first = auto_sync._current_hashes()
+        get_files.return_value = {
+            'B.sublime-settings': {'content': 'y', 'path': '/b'},
+            'A.sublime-settings': {'content': 'x', 'path': '/a'},
+        }
+        self.assertEqual(first, auto_sync._current_hashes())
+
+    @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                return_value=None)
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    def test_changes_with_content(self, get_files, _snap):
+        get_files.return_value = {'A.sublime-settings': {'content': 'x', 'path': '/a'}}
+        h1 = auto_sync._current_hashes()
+        get_files.return_value = {'A.sublime-settings': {'content': 'z', 'path': '/a'}}
+        self.assertNotEqual(h1, auto_sync._current_hashes())
+
+
+def _patch_settings(gist_id='g1'):
+    patcher = mock.patch('sync_settings_reborn.auto_sync.settings.get',
+                         side_effect=lambda k, d=None: {'gist_id': gist_id}.get(k, d))
+    patcher.start()
+    return patcher
+
+
+class TestSyncOnce(unittest.TestCase):
+    def setUp(self):
+        self.svc = auto_sync.AutoSync()
+        self.svc._last_seen_remote = 'r1'
+        self.svc._last_synced = {}
+        self._persist = mock.patch(
+            'sync_settings_reborn.auto_sync.version.update_config_file').start()
+
+    def tearDown(self):
+        mock.patch.stopall()
+
+    @mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists',
+                return_value=True)
+    @mock.patch('sync_settings_reborn.auto_sync._push', return_value=_gist('r1-p'))
+    @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
+                return_value=('r1', 't', {}))
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                return_value=None)
+    def test_remote_unchanged_pushes_local_delta(self, _snap, get_files,
+                                                 _fetch, _push, _exists):
+        _patch_settings(gist_id='g1')
+        get_files.return_value = _files({'A.sublime-settings': 'x',
+                                         'B.sublime-settings': 'y'})
+        self.svc._last_synced = {'A.sublime-settings': _h('x')}  # B is new locally
+        self.svc._sync_once()
+        # The single gist fetch reports the same revision; its body is ignored
+        # and only the local delta is pushed.
+        _fetch.assert_called_once_with()
+        _push.assert_called_once()
+        pushed = set(_push.call_args.args[0])
+        self.assertEqual(pushed, {'B.sublime-settings'})
+        # The PATCH response revision is recorded, so the next cycle doesn't
+        # redundantly merge a revision we ourselves just created.
+        self.assertEqual(self.svc._last_seen_remote, 'r1-p')
+
+    @mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists',
+                return_value=True)
+    @mock.patch('sync_settings_reborn.auto_sync._push')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
+    @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
+                return_value=('r2', 't', {'A.sublime-settings': 'x',
+                                          'C.sublime-settings': 'z'}))
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                return_value=None)
+    def test_remote_changed_no_conflict(self, _snap, get_files, _fetch,
+                                        write, _push, _exists):
+        _patch_settings(gist_id='g1')
+        # Before the pull the disk has A and local-new B; after the remote pull
+        # writes C, a re-scan of the disk sees A, B and C.
+        get_files.side_effect = [
+            _files({'A.sublime-settings': 'x', 'B.sublime-settings': 'y'}),
+            _files({'A.sublime-settings': 'x', 'B.sublime-settings': 'y',
+                    'C.sublime-settings': 'z'}),
+        ]
+        self.svc._last_synced = {'A.sublime-settings': _h('x')}
+        self.svc._last_seen_remote = 'r1'
+        self.svc._sync_once()
+        # Remote added C -> pulled; local added B -> pushed. No overlap.
+        write.assert_called_once_with({'C.sublime-settings': 'z'},
+                                      preserve_packages=True)
+        _push.assert_called_once()
+        self.assertEqual(set(_push.call_args.args[0]), {'B.sublime-settings'})
+        # Baseline follows the new revision and remembers the pulled file.
+        self.assertEqual(self.svc._last_seen_remote, 'r2')
+        self.assertEqual(self.svc._last_synced['C.sublime-settings'], _h('z'))
+
+    @mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists',
+                return_value=True)
+    @mock.patch('sync_settings_reborn.auto_sync._backup_conflicts')
+    @mock.patch('sync_settings_reborn.auto_sync._push')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
+    @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
+                return_value=('r2', 't', {'A.sublime-settings': 'x3'}))
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                return_value=None)
+    def test_conflict_takes_remote_and_backs_up(self, _snap, get_files, _fetch,
+                                                write, _push, backup, _exists):
+        _patch_settings(gist_id='g1')
+        # First scan (before the remote write) sees the local edit; re-scan
+        # after pulling sees the remote version now on disk.
+        get_files.side_effect = [
+            _files({'A.sublime-settings': 'x2'}),
+            _files({'A.sublime-settings': 'x3'}),
+        ]
+        self.svc._last_synced = {'A.sublime-settings': _h('x')}  # baseline x
+        self.svc._last_seen_remote = 'r1'
+        self.svc._sync_once()
+        # Conflict: remote x3 wins (pulled), local x2 backed up, NOT pushed.
+        write.assert_called_once_with({'A.sublime-settings': 'x3'},
+                                      preserve_packages=True)
+        _push.assert_not_called()
+        backup.assert_called_once()
+        self.assertEqual(backup.call_args.args[0], ['A.sublime-settings'])
+        self.assertEqual(self.svc._last_synced['A.sublime-settings'], _h('x3'))
+
+    @mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists',
+                return_value=True)
+    @mock.patch('sync_settings_reborn.auto_sync._push')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.delete_user_files')
+    @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
+                return_value=('r2', 't', {}))
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                return_value=None)
+    def test_remote_deletion_propagates_locally(self, _snap, get_files, _fetch,
+                                                delete, write, _push, _exists):
+        _patch_settings(gist_id='g1')
+        get_files.side_effect = [
+            _files({'A.sublime-settings': 'x'}),
+            _files({}),
+        ]
+        self.svc._last_synced = {'A.sublime-settings': _h('x')}
+        self.svc._last_seen_remote = 'r1'
+        self.svc._sync_once()
+        delete.assert_called_once_with(['A.sublime-settings'])
+        _push.assert_not_called()
+        self.assertNotIn('A.sublime-settings', self.svc._last_synced)
+
+    @mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists',
+                return_value=True)
+    @mock.patch('sync_settings_reborn.auto_sync._push')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
+    @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
+                return_value=('r2', 't', {'A.sublime-settings': None}))
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                return_value=None)
+    def test_truncated_remote_content_is_skipped_not_deleted(self, _snap, get_files,
+                                                             _fetch, write,
+                                                             _push, _exists):
+        _patch_settings(gist_id='g1')
+        get_files.return_value = _files({'A.sublime-settings': 'x'})
+        self.svc._last_synced = {'A.sublime-settings': _h('x')}
+        self.svc._last_seen_remote = 'r1'
+        self.svc._sync_once()
+        write.assert_not_called()
+        _push.assert_not_called()
+        # Baseline kept so the pull is retried once the content is available.
+        self.assertIn('A.sublime-settings', self.svc._last_synced)
+
+    @mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists')
+    @mock.patch('sync_settings_reborn.auto_sync._push')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
+    @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
+                return_value=('r2', 't', {'A.sublime-settings': 'x',
+                                          'R.sublime-settings': 'z'}))
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                return_value=None)
+    def test_local_deletion_during_merge_does_not_raise(self, _snap, get_files,
+                                                        _fetch, write, _push,
+                                                        exists):
+        _patch_settings(gist_id='g1')
+        # A is gone from disk; a *different* file R changed remotely, forcing
+        # the merge path. Old code raised KeyError on current['A'].
+        exists.return_value = False
+        get_files.return_value = _files({})
+        self.svc._last_synced = {'A.sublime-settings': _h('x')}
+        self.svc._last_seen_remote = 'r1'
+        self.svc._sync_once()  # must not raise
+        _push.assert_called_once()
+        self.assertEqual(_push.call_args.args[0], {'A.sublime-settings': None})
+        self.assertNotIn('A.sublime-settings', self.svc._last_synced)
+
+    @mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists')
+    @mock.patch('sync_settings_reborn.auto_sync._push')
+    @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
+                return_value=('r1', 't', {}))
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                return_value=None)
+    def test_filtered_out_file_is_not_pushed_as_deletion(self, _snap, get_files,
+                                                         _fetch, _push, exists):
+        # The file is absent from the collected set (e.g. token filter flipped)
+        # but STILL ON DISK: it must never be deleted from the gist.
+        _patch_settings(gist_id='g1')
+        exists.return_value = True
+        get_files.return_value = _files({})
+        self.svc._last_synced = {'A.sublime-settings': _h('secret')}
+        self.svc._sync_once()
+        _push.assert_not_called()
+        self.assertIn('A.sublime-settings', self.svc._last_synced)
+
+    @mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists',
+                return_value=True)
+    @mock.patch('sync_settings_reborn.auto_sync._push')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
+    @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
+                return_value=('r2', 't', {'PC.sublime-settings': 'remote'}))
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                return_value=None)
+    def test_merged_pull_result_is_pushed_back(self, _snap, get_files, _fetch,
+                                               write, _push, _exists):
+        # write_user_files merges installed_packages on disk; the re-scan shows
+        # content different from the raw remote, and that union must be pushed.
+        _patch_settings(gist_id='g1')
+        get_files.side_effect = [
+            _files({'PC.sublime-settings': 'local0'}),
+            _files({'PC.sublime-settings': 'merged-union'}),
+        ]
+        self.svc._last_synced = {'PC.sublime-settings': _h('local0')}
+        self.svc._last_seen_remote = 'r1'
+        self.svc._sync_once()
+        _push.assert_called_once()
+        self.assertEqual(
+            _push.call_args.args[0]['PC.sublime-settings'],
+            {'content': 'merged-union'})
+
+
+class TestMissingGist(unittest.TestCase):
+    def setUp(self):
+        self.svc = auto_sync.AutoSync()
+        _patch_settings(gist_id='g1')
+        self.dialog = mock.patch.object(auto_sync.sublime,
+                                        'message_dialog').start()
+
+    def tearDown(self):
+        mock.patch.stopall()
+
+    @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
+                side_effect=NotFoundError('gone'))
+    def test_404_dialog_shown_once_and_paused(self, fetch):
+        self.svc._sync_once()
+        self.svc._sync_once()
+        self.assertEqual(self.dialog.call_count, 1)
+        # Sync really paused: the dead gist is not polled on the second cycle.
+        fetch.assert_called_once_with()
+        self.assertEqual(self.svc._missing_gist, 'g1')
+
+    @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                return_value=None)
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files', return_value={})
+    @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
+                side_effect=[NotFoundError('gone'), ('r9', 't', {})])
+    def test_resumes_after_gist_id_changes(self, fetch, _files_mock, _snap):
+        self.svc._sync_once()  # g1 404 -> paused
+        _patch_settings(gist_id='g2')
+        self.svc._sync_once()  # new id must be tried, pause lifted
+        self.assertEqual(fetch.call_count, 2)
+        self.assertIsNone(self.svc._missing_gist)
+
+
+class TestPush(unittest.TestCase):
+    @mock.patch('sync_settings_reborn.auto_sync.version.update_config_file')
+    @mock.patch('sync_settings_reborn.auto_sync.settings.update')
+    @mock.patch('sync_settings_reborn.auto_sync.settings.get', return_value='')
+    def test_creates_gist_when_no_id(self, _get, update, upd_cfg):
+        gist_mock = mock.MagicMock()
+        gist_mock.create.return_value = _gist('v1')
+        with mock.patch('sync_settings_reborn.auto_sync.Gist.from_settings',
+                        return_value=gist_mock):
+            g = auto_sync._push({'A.sublime-settings': {'content': 'x'}})
+        self.assertEqual(g['history'][0]['version'], 'v1')
+        update.assert_called_once_with('gist_id', 'g1')
+
+    def test_no_push_without_files(self):
+        self.assertIsNone(auto_sync._push({}))
+
+    def test_deletions_not_sent_on_create(self):
+        # A None entry means "delete"; that is invalid while creating a gist.
+        with mock.patch('sync_settings_reborn.auto_sync.Gist.from_settings') as api:
+            self.assertIsNone(
+                auto_sync._push({'A.sublime-settings': None}))
+            api.assert_not_called()
+
+
+class TestInitialPush(unittest.TestCase):
+    def setUp(self):
+        self.svc = auto_sync.AutoSync()
+        _patch_settings(gist_id='')
+        mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                   return_value=None).start()
+        mock.patch('sync_settings_reborn.auto_sync.version.update_config_file').start()
+
+    def tearDown(self):
+        mock.patch.stopall()
+
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    @mock.patch('sync_settings_reborn.auto_sync._push', return_value=_gist('v1'))
+    def test_first_gist_gets_the_full_mirror(self, push, get_files):
+        # Even though the baseline already records A and B (a restart before
+        # any gist existed), the first-created gist must contain both files.
+        get_files.return_value = {
+            'A.sublime-settings': {'content': 'x', 'path': '/a'},
+            'B.sublime-settings': {'content': 'y', 'path': '/b'},
+        }
+        self.svc._last_synced = {'A.sublime-settings': _h('x'),
+                                 'B.sublime-settings': _h('y')}
+        self.svc._sync_once()
+        payload = push.call_args.args[0]
+        self.assertEqual(set(payload),
+                         {'A.sublime-settings', 'B.sublime-settings'})
+
+
+class TestOfflineEdits(unittest.TestCase):
+    """The common ancestor is persisted in sync.json, so edits made while ST
+    was closed survive a restart instead of being seeded as "already synced"."""
+
+    def setUp(self):
+        self.svc = auto_sync.AutoSync()
+        _patch_settings(gist_id='g1')
+        mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
+                   return_value=None).start()
+        mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists',
+                   return_value=True).start()
+        mock.patch('sync_settings_reborn.auto_sync.version.update_config_file').start()
+
+    def tearDown(self):
+        mock.patch.stopall()
+
+    @mock.patch('sync_settings_reborn.auto_sync._push', return_value=_gist('r1-p'))
+    @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
+                return_value=('r1', 't', {}))
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    def test_offline_edit_is_pushed(self, get_files, _fetch, push):
+        get_files.return_value = _files({'A.sublime-settings': 'x2'})
+        # Baseline restored from sync.json after restart says x.
+        self.svc._last_synced = {'A.sublime-settings': _h('x')}
+        self.svc._last_seen_remote = 'r1'
+        self.svc._sync_once()
+        self.assertEqual(push.call_args.args[0]['A.sublime-settings'],
+                         {'content': 'x2'})
+
+    @mock.patch('sync_settings_reborn.auto_sync._backup_conflicts')
+    @mock.patch('sync_settings_reborn.auto_sync._push')
+    @mock.patch('sync_settings_reborn.auto_sync.manager.write_user_files')
+    @mock.patch('sync_settings_reborn.auto_sync._fetch_remote',
+                return_value=('r2', 't', {'A.sublime-settings': 'x3'}))
+    @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
+    def test_offline_edit_conflicting_with_remote_is_backed_up(self, get_files,
+                                                               _fetch, write,
+                                                               push, backup):
+        get_files.side_effect = [
+            _files({'A.sublime-settings': 'x2'}),
+            _files({'A.sublime-settings': 'x3'}),
+        ]
+        self.svc._last_synced = {'A.sublime-settings': _h('x')}
+        self.svc._last_seen_remote = 'r1'
+        self.svc._sync_once()
+        backup.assert_called_once()
+        push.assert_not_called()
+        write.assert_called_once()
+
+
+class TestFetchRemote(unittest.TestCase):
+    @mock.patch('sync_settings_reborn.auto_sync.settings.get', return_value='g1')
+    def test_normalises_raw_gist_file_objects(self, _get):
+        raw_gist = {
+            'history': [{'version': 'r2', 'committed_at': 't'}],
+            'files': {
+                'A.sublime-settings': {'content': 'x', 'truncated': False,
+                                       'raw_url': 'http://a'},
+                'Big.sublime-settings': {'content': '', 'truncated': True,
+                                         'raw_url': 'http://b'},
+            },
+        }
+        gist_mock = mock.MagicMock()
+        gist_mock.get.return_value = raw_gist
+        with mock.patch('sync_settings_reborn.auto_sync.Gist.from_settings',
+                        return_value=gist_mock):
+            rev, committed_at, files = auto_sync._fetch_remote()
+        self.assertEqual(rev, 'r2')
+        self.assertEqual(files['A.sublime-settings'], 'x')
+        # Truncated: key kept (file exists) but content unavailable.
+        self.assertIsNone(files['Big.sublime-settings'])
+
+
+class TestStatePersistence(unittest.TestCase):
+    @mock.patch('sync_settings_reborn.auto_sync.version.update_config_file')
+    @mock.patch('sync_settings_reborn.auto_sync.version.get_local_version',
+                return_value={'hash': 'r9', 'created_at': 't',
+                              'files': {'A.sublime-settings': 'ha'}})
+    def test_start_restores_persisted_baseline(self, get_ver, update):
+        svc = auto_sync.AutoSync()
+        with mock.patch('sync_settings_reborn.auto_sync.settings.get',
+                        return_value=None):
+            svc.start()
+        try:
+            self.assertEqual(svc._last_seen_remote, 'r9')
+            self.assertEqual(svc._last_synced, {'A.sublime-settings': 'ha'})
+        finally:
+            svc.stop()
+
+    @mock.patch('sync_settings_reborn.auto_sync.version.update_config_file')
+    def test_persist_includes_files_baseline(self, update):
+        svc = auto_sync.AutoSync()
+        svc._last_seen_remote = 'r3'
+        svc._last_committed_at = 'tt'
+        svc._last_synced = {'A': 'h'}
+        svc._persist_state()
+        update.assert_called_once_with({
+            'hash': 'r3', 'created_at': 'tt', 'files': {'A': 'h'}})
+
+
+class TestStartStop(unittest.TestCase):
+    def test_start_is_idempotent(self):
+        with mock.patch('sync_settings_reborn.auto_sync.settings.get',
+                        return_value=None):
+            svc = auto_sync.AutoSync()
+            svc._interval = 0.01
+            svc.start()
+            first = svc._thread
+            svc.start()
+            self.assertIs(first, svc._thread)
+            svc.stop()
+
+
+class TestUserFileGuards(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.user = os.path.join(self.tmp, 'User')
+        os.makedirs(self.user)
+        self.patcher = mock.patch.object(
+            auto_sync.manager.sublime, 'packages_path',
+            lambda: self.tmp)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_exists_detects_real_file(self):
+        name = 'A.sublime-settings'
+        with open(os.path.join(self.user, name), 'w') as f:
+            f.write('x')
+        self.assertTrue(auto_sync.manager.user_file_exists(name))
+        self.assertFalse(auto_sync.manager.user_file_exists('Missing.sublime-settings'))
+
+    def test_delete_removes_file_and_rejects_traversal(self):
+        name = 'A.sublime-settings'
+        with open(os.path.join(self.user, name), 'w') as f:
+            f.write('x')
+        outside = os.path.join(self.tmp, 'outside.txt')
+        with open(outside, 'w') as f:
+            f.write('keep')
+        auto_sync.manager.delete_user_files([name, '..%2Foutside.txt'])
+        self.assertFalse(os.path.exists(os.path.join(self.user, name)))
+        self.assertTrue(os.path.exists(outside))
+
+
+if __name__ == '__main__':
+    unittest.main()

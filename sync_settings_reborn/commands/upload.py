@@ -4,7 +4,7 @@ import sublime
 import sublime_plugin
 
 from . import decorators
-from .. import sync_version as version, sync_manager as manager
+from .. import auto_sync, sync_version as version, sync_manager as manager
 from ..libs import settings
 from ..libs import gist
 from ..libs.logger import logger
@@ -37,6 +37,9 @@ class SyncSettingsRebornUploadCommand(sublime_plugin.WindowCommand):
                 'hash': commit['version'],
                 'created_at': commit['committed_at'],
             })
+            # Keep background auto-sync's merge baseline aligned so these files
+            # don't look like fresh local edits on its next cycle.
+            auto_sync.adopt_manual_upload(files, g)
             logger.info('upload complete')
         except gist.NotFoundError as e:
             decorators.report_gist_not_found(e)

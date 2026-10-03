@@ -11,6 +11,7 @@ import threading
 import time
 
 from .libs import path, settings, file
+from .libs.gist import REQUEST_TIMEOUT
 from .libs.logger import logger
 
 from queue import Queue
@@ -254,7 +255,7 @@ def download_file(q):
     while not q.empty():
         url, name = q.get()
         try:
-            r = requests.get(url, stream=True)
+            r = requests.get(url, stream=True, timeout=REQUEST_TIMEOUT)
             if r.status_code == 200:
                 with open(name, 'wb') as f:
                     r.raw.decode_content = True
@@ -302,11 +303,9 @@ def _is_within(user_real, target):
 
 
 def _write_one(user_path, user_real, name, data):
-    target = path.join(user_path, path.decode(name))
-    # Guard against path traversal (e.g. a zip entry like `../../.bashrc`): never
-    # write outside Packages/User, even for foreign or malicious backups.
-    if not _is_within(user_real, target):
-        logger.warning('refusing to write outside Packages/User: {}'.format(target))
+    # The decode + traversal guard lives in one place (_resolve_inside_user).
+    target = _resolve_inside_user(user_real, name)
+    if target is None:
         return
     os.makedirs(os.path.dirname(target), exist_ok=True)
     mode = 'wb' if isinstance(data, (bytes, bytearray)) else 'w'
@@ -376,6 +375,50 @@ def write_user_files(files, preserve_packages=True):
         if name.endswith('Package Control.sublime-settings') and preserve_packages:
             data = _merge_installed_packages(data)
         _write_one(user_path, user_real, key, data)
+
+
+def _resolve_inside_user(user_real, key):
+    """Decode an encoded/raw relative name and return its real path only when
+    it stays inside Packages/User (same guard as _write_one)."""
+    user_path = path.join(sublime.packages_path(), 'User')
+    target = path.join(user_path, path.decode(key))
+    if not _is_within(user_real, target):
+        logger.warning('refusing path outside Packages/User: {}'.format(target))
+        return None
+    return target
+
+
+def user_file_exists(key):
+    """True when a User file named `key` exists on disk, regardless of the
+    upload filters (exclude/include, token scan, empty skip, uninstalled skip).
+
+    Auto-sync uses this to tell a real deletion apart from a file that is
+    merely filtered out: only a missing file may be deleted from the gist.
+    """
+    user_path = path.join(sublime.packages_path(), 'User')
+    target = _resolve_inside_user(os.path.realpath(user_path), key)
+    return target is not None and os.path.isfile(target)
+
+
+def delete_user_files(names):
+    """Delete the given (encoded- or raw-name) files from Packages/User.
+
+    Used by auto-sync to propagate remote deletions. Only files inside
+    Packages/User are ever removed; directories are never touched.
+    """
+    user_path = path.join(sublime.packages_path(), 'User')
+    user_real = os.path.realpath(user_path)
+    for key in names:
+        target = _resolve_inside_user(user_real, key)
+        if target is None:
+            continue
+        try:
+            os.remove(target)
+            logger.info('auto-sync removed file deleted on the gist: {}'.format(key))
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            logger.warning('could not delete synced file {}: {}'.format(key, e))
 
 
 def move_files(origin):

@@ -22,6 +22,22 @@ else:
 if reloader in sys.modules:
     reload(sys.modules[reloader])
 
+# Imported AFTER the reloader so a package reload binds the freshly reloaded
+# auto_sync module. Sublime only invokes plugin_loaded/plugin_unloaded on
+# modules in the package root, so the lifecycle hooks live here and delegate.
+if int(sublime.version()) > 3000:
+    from .sync_settings_reborn import auto_sync
+else:
+    from sync_settings_reborn import auto_sync
+
 # Carry over config from the unmaintained original package on first run.
 from .sync_settings_reborn.libs.settings import migrate_legacy
 migrate_legacy()
+
+
+def plugin_loaded():
+    auto_sync.startup_sync()
+
+
+def plugin_unloaded():
+    auto_sync.shutdown()

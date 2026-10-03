@@ -87,12 +87,18 @@ By default, this plugin operates over [Sublime Text](https://www.sublimetext.com
 |---|---|---|
 | `access_token`  | `string` | Brings write permission to [SyncSettingsReborn](https://packagecontrol.io/packages/Sync%20Settings) over your gists (edit, delete and create). *(This option is not required, if you only want to download your backups)* | 
 | `gist_id`  | `string` | Identifier of your backup on [gist.github.com](https://gist.github.com). |
-| `auto_upgrade`  | `boolean` | If is `true`, your settings will be synced with the latest settings on [gist.github.com](https://gist.github.com) when [Sublime Text](https://www.sublimetext.com) startup |
+| `auto_upgrade`  | `boolean` | If `true`, settings are kept in sync with the gist automatically: Sublime pulls the latest gist on startup, and a background loop both pulls remote changes and pushes local changes (upload-on-change) on a timer. The sync is a three-way merge (only changed files move each way), and a file edited on two machines at once is reported as a conflict — the local copy is backed up to `~/.sync_settings_reborn/conflicts/<timestamp>/` and the gist version wins, so nothing is silently lost. Requires `access_token` (and a `gist_id` for pulls; pushes create one if missing). Default `false`. |
+| `auto_sync_interval`  | `number` | Background auto-sync poll interval in **minutes**, used only when `auto_upgrade` is `true`. Default `5`. |
 | `http_proxy`  | `string` | An HTTP proxy server to use for requests. |
 | `https_proxy`  | `string` | An HTTPS proxy server to use for requests. |
 | `excluded_files`  | `[]string` | In simple words, this option is a black list. Which means, every file that match with the defined pattern, will be ignored on sync. |
 | `included_files`  | `[]string` | In simple words, this option is a white list. Which means, every file that match with the defined pattern, will be included on sync, even if it was included on `excluded_files` option. |
-| `skip_uninstalled_packages`  | `boolean` | If `true`, files belonging to a package that is **not currently installed** are skipped on upload — covers leftover `<Package>.sublime-settings`/`.sublime-keymap`/etc. and `<Package>/` data folders left behind by removed plugins. Global files (`Preferences`, `Package Control`, `SyncSettingsReborn`) are always kept. Default `false`. |
+| `skip_uninstalled_packages`  | `boolean` | If `true`, files belonging to a package that is **not currently installed** are skipped on upload — covers leftover `<Package>.sublime-settings`/`.sublime-keymap`/etc. and `<Package>/` data folders left behind by removed plugins. Global files (`Preferences`, `Package Control`, `SyncSettingsReborn`) and generic loose files directly in `User` are always kept. Default `true`. |
+| `backup_path`  | `string` | Default output location for `Backup to Zip` (and the package-list backup). Empty falls back to `~/SyncSettingsReborn.zip`. The package-list backup always uses a separate `-packages` filename, so it can never overwrite a full backup. |
+| `prompt_for_location`  | `boolean` | When `true`, the backup/restore commands ask for a path before writing/reading; when `false`, they use `backup_path`. Default `true`. |
+| `preserve_packages`  | `boolean` | On restore, merge the incoming `installed_packages` with the local list instead of overwriting it, so packages only on this machine are kept. Default `true`. |
+| `ignore_dirs`  | `[]string` | fnmatch patterns for whole directory names to skip when collecting files (e.g. `["node_modules"]`). |
+| `online_sync_folder`  | `string` | Folder (typically a cloud-synced directory like Dropbox / Google Drive) used by the `Sync Online` commands to read/write the settings zip. Empty until you run `Sync Online - Define Folder`. |
 
 > Note: `excluded_files` and `included_files` are patterns defined as [unix shell style](https://tldp.org/LDP/GNU-Linux-Tools-Summary/html/x11655.htm).
 

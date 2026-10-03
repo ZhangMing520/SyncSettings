@@ -7,7 +7,7 @@ import sublime
 import sublime_plugin
 
 from . import decorators
-from .. import sync_version as version, sync_manager as manager
+from .. import auto_sync, sync_version as version, sync_manager as manager
 from ..libs import settings, path
 from ..libs.gist import Gist
 from ..libs.logger import logger
@@ -37,6 +37,9 @@ class SyncSettingsRebornDownloadCommand(sublime_plugin.WindowCommand):
                 'hash': commit['version'],
                 'created_at': commit['committed_at'],
             })
+            # Align background auto-sync with what was just downloaded so it
+            # doesn't flag every remote file as a conflict on its next cycle.
+            auto_sync.adopt_manual_download(g)
         except Exception as e:
             logger.warning('could not update gist metadata')
             logger.exception(e)

@@ -35,9 +35,16 @@
     // included on `excluded_files` option.
     "included_files": [],
 
-    // If is `true`, your settings will be synced with the latest settings on
-    // gist.github.com when Sublime Text startup
+    // If is `true`, your settings are kept in sync with the gist automatically:
+    // Sublime pulls the latest gist on startup, and a background loop both
+    // pulls remote changes and pushes local changes (upload-on-change) on a
+    // timer. Requires `access_token` (and a `gist_id` for pulls; pushes will
+    // create one if missing).
     "auto_upgrade": false,
+
+    // Background auto-sync poll interval in minutes (used only when
+    // `auto_upgrade` is true). Default 5.
+    "auto_sync_interval": 5,
 
     // --- Offline zip backup / restore (PackageSync-style) ---
     // When `prompt_for_location` is true, the backup/restore commands ask for a
@@ -60,10 +67,9 @@
     // Package Control, SyncSettingsReborn) and generic loose files directly in
     // User are always kept. Note: ANY top-level User subfolder whose name does
     // not match an installed package is skipped wholesale, including folders
-    // you created yourself (e.g. `Snippets/`), so don't enable this if you keep
-    // personal resources in such folders. Default off so existing behavior is
-    // unchanged until you opt in.
-    "skip_uninstalled_packages": false,
+    // you created yourself (e.g. `Snippets/`), so set this to `false` if you
+    // keep personal resources in such folders. Default on.
+    "skip_uninstalled_packages": true,
 
     // Directory names (fnmatch patterns) to skip entirely when collecting files
     "ignore_dirs": [],

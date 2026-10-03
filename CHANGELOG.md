@@ -26,12 +26,61 @@
   cannot carry a token.
 - Fixed `Backup Package List` overwriting a full zip backup: it now always writes
   a separate `-packages` file (`~/SyncSettingsReborn-packages.zip`).
+- **Breaking default:** `skip_uninstalled_packages` now defaults to `true`
+  (it was effectively off). ANY top-level `User/` subfolder whose name does not
+  match an installed package is skipped — including folders you created
+  yourself (e.g. `Snippets/`). Set it to `false` if you keep personal resources
+  in such folders.
 - Fixed `skip_uninstalled_packages` being ignored by the zip backup / package
   list commands; it now applies to every backup path, not just the Gist upload.
 - Fixed `skip_uninstalled_packages` silently doing nothing: `list_packages()`
   raises when called from the upload/backup worker thread, which degraded to
   "keep every file". The package list is now snapshotted on the main thread and
   passed to the worker.
+- **Implemented `auto_upgrade` auto-sync** (previously a dead setting). When
+  `true`, Sublime pulls the latest Gist on startup (the original behaviour) and a
+  background daemon thread keeps the mirror in sync on a timer
+  (`auto_sync_interval`, default 5 minutes). The loop is a **three-way merge**
+  against the snapshot last synced, not a blind pull-everything / push-everything:
+  only files that changed remotely are pulled, only files that changed locally
+  are pushed, so a change made only on this machine is never clobbered by a
+  remote change to a different file.
+  - **Conflict handling:** when the *same* file was changed both locally and
+    remotely since the last sync, it is flagged (logged + status message), the
+    local version is backed up under `~/.sync_settings_reborn/conflicts/<ts>/`
+    so the edit is recoverable, and the remote version wins (the gist stays the
+    shared source of truth) — instead of one side being silently lost.
+  - Requires `access_token`; pulls also need a `gist_id` (pushes create one if
+    missing).
+  - The three-way merge baseline (per-file content hashes and the last gist
+    revision) is **persisted in `sync.json`**, so edits made while Sublime was
+    closed survive a restart: previously the baseline was seeded from current
+    disk contents on every start, which made offline edits invisible and let a
+    remote version overwrite them without a conflict backup.
+  - **File deletions propagate both ways.** A file deleted locally is removed
+    from the Gist (`{"file": null}`), and a file deleted in the Gist is removed
+    locally. Files merely filtered out by token/exclude rules (still on disk)
+    are never mistaken for deletions. Local delete requests are path-traversal
+    guarded.
+  - When no `gist_id` exists, the first push creates a Gist containing the
+    **full mirror** of current files, not just files touched since startup.
+  - After a remote pull the local tree is **re-collected before pushing**, so
+    Package Control's preserve-merge result is what gets uploaded (previously
+    pre-pull contents could be pushed back, causing permanent churn).
+  - `auto_sync_interval` values ≤ 0 or < 1 minute are ignored (minimum 1
+    minute), instead of producing a zero/negative-timeout busy loop.
+  - A deleted/404 Gist pauses auto-sync after showing a one-time dialog,
+    instead of failing silently forever on every cycle.
+  - Gist API calls carry a 30 s timeout, and startup sync never blocks
+    Sublime's main thread.
+  - Manual `Upload`/`Download` commands re-baseline auto-sync so their changes
+    are not re-merged as conflicts.
+- Removed the dead legacy `sync_version` helpers (`get_remote_version`,
+  `show_update_dialog`, `upgrade`) — they were the original, never-wired-up
+  `auto_upgrade` implementation (no caller, and clicking "update" only wrote the
+  local record without actually downloading). The real auto-sync now lives in
+  `auto_sync.py`. `get_local_version` / `update_config_file` are kept (still used
+  to record the last-synced gist revision).
 
 ## v4.1.0 — PackageSync-style sync
 

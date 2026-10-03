@@ -62,7 +62,10 @@ sublime.status_message = lambda *a, **k: None
 sublime.message_dialog = lambda *a, **k: None
 sublime.set_clipboard = lambda *a, **k: None
 sublime.active_window = lambda *a, **k: None
-sublime.set_timeout = lambda fn, *a, **k: None  # do not execute deferred work
+# Run main-thread callbacks inline: production code schedules these with
+# set_timeout from worker threads; in tests there is no event loop, so execute
+# synchronously to preserve the same main-thread semantics.
+sublime.set_timeout = lambda fn, *a, **k: fn()
 sublime.version = lambda: '4143'
 sublime.packages_path = lambda: '/tmp'
 sublime.installed_packages_path = lambda: '/tmp/Installed Packages'
