@@ -46,6 +46,12 @@
     // `auto_upgrade` is true). Default 5.
     "auto_sync_interval": 5,
 
+    // Maximum file size (bytes) uploaded to the gist. GitHub's gist REST API
+    // returns at most ~1 MiB of content per file and truncates larger ones, so
+    // anything above this can never be restored intact and is skipped on upload
+    // (with a warning). The offline zip export is unaffected. Default 1048576.
+    "max_file_size": 1048576,
+
     // --- Offline zip backup / restore (PackageSync-style) ---
     // When `prompt_for_location` is true, the backup/restore commands ask for a
     // path; otherwise they use `backup_path` (empty falls back to ~/SyncSettingsReborn.zip)

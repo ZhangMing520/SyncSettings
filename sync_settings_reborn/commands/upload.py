@@ -12,6 +12,34 @@ from ..thread_progress import ThreadProgress
 
 
 class SyncSettingsRebornUploadCommand(sublime_plugin.WindowCommand):
+    def _propagate_deletions(self, gist_api, gid, files):
+        """Add ``null`` entries for files THIS machine synced before and has
+        since deleted, so the gist PATCH removes them too.
+
+        Only names in the persisted per-machine baseline are eligible. A file
+        another machine synced but this machine has never seen (a fresh
+        install, or an Upload before the first Download) is left untouched —
+        deleting it would wipe the shared gist, and other machines' background
+        merges would then cascade the deletion to their disks. A file merely
+        filtered out of the upload set but still on disk is kept as well.
+        """
+        baseline = (version.get_local_version() or {}).get('files') or {}
+        # Resolve locally-attributable deletions first; when there are none
+        # (the common case) no gist listing round trip is needed at all.
+        deleted = {
+            name for name in baseline
+            if name not in files and not manager.user_file_exists(name)
+        }
+        if not deleted:
+            return
+        try:
+            remote_names = (gist_api.get(gid) or {}).get('files') or {}
+        except Exception:
+            # Can't list the gist: update with what we have, never guess
+            # deletions from a failed listing.
+            return
+        files.update({name: None for name in deleted.intersection(remote_names)})
+
     def upload(self, installed=None):
         files = manager.get_files(installed=installed)
         if not len(files):
@@ -23,6 +51,9 @@ class SyncSettingsRebornUploadCommand(sublime_plugin.WindowCommand):
         try:
             gist_api = gist.Gist.from_settings()
             if gid:
+                # Gist PATCH is a merge: files absent from the payload are kept
+                # on the gist. Propagate this machine's real deletions.
+                self._propagate_deletions(gist_api, gid, files)
                 # Update the existing gist.
                 g = gist_api.update(gid, data={'files': files})
             else:

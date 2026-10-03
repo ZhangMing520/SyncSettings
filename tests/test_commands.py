@@ -155,25 +155,14 @@ class InstalledPackagesHelpersTest(unittest.TestCase):
 
 class DownloadCommandTest(unittest.TestCase):
     """Exercises the Download package-install path end to end with the network
-    and Gist stubbed. This is the exact code that crashed with AttributeError
-    when the helpers were defined privately but called publicly."""
+    and Gist stubbed. The install step delegates to the shared
+    manager.install_missing_packages helper (covered directly in
+    test_sync_manager)."""
 
     def setUp(self):
         self.cmd = download.SyncSettingsRebornDownloadCommand()
         self.cmd.window = mock.MagicMock()
         self.cmd._failed = False
-
-    def test_install_missing_packages_calls_advanced_install(self):
-        with mock.patch.object(manager, 'local_installed_packages', return_value=['A', 'B']):
-            self.cmd._install_missing_packages(['A', 'B', 'C', 'D'])
-        self.cmd.window.run_command.assert_called_once_with(
-            'advanced_install_package', {'packages': ['C', 'D']}
-        )
-
-    def test_install_missing_packages_empty_diff_no_call(self):
-        with mock.patch.object(manager, 'local_installed_packages', return_value=['A', 'B']):
-            self.cmd._install_missing_packages(['A', 'B'])
-        self.cmd.window.run_command.assert_not_called()
 
     def test_download_restores_then_installs(self):
         fake_gist = {
@@ -185,14 +174,13 @@ class DownloadCommandTest(unittest.TestCase):
                 mock.patch.object(manager, 'fetch_files') as m_fetch, \
                 mock.patch.object(manager, 'get_content', return_value='{"installed_packages": ["C"]}'), \
                 mock.patch.object(manager, 'installed_packages_from_content', return_value=['C']), \
-                mock.patch.object(manager, 'local_installed_packages', return_value=['A']), \
+                mock.patch.object(manager, 'install_missing_packages') as m_install, \
                 mock.patch.object(manager, 'move_files') as m_move:
             self.cmd.download()
         m_fetch.assert_called_once()
         m_move.assert_called_once()
-        self.cmd.window.run_command.assert_called_once_with(
-            'advanced_install_package', {'packages': ['C']}
-        )
+        # Restore happens before the best-effort install request.
+        m_install.assert_called_once_with(['C'])
 
 
 class BackupSkipUninstalledTest(unittest.TestCase):
@@ -279,6 +267,68 @@ class UploadCommandTest(unittest.TestCase):
                 mock.patch.object(settings, 'get', return_value='tok'):
             self.cmd.upload(installed={'LSP'})
         m_get.assert_called_once_with(installed={'LSP'})
+
+    def _upload_with_baseline(self, remote_names, baseline, file_exists):
+        """Run Upload against a stubbed gist and return the files map actually
+        sent on PATCH. Local upload set always contains a.sublime-settings."""
+        api = mock.MagicMock()
+        api.get.return_value = {
+            'files': {name: {'content': '{}'} for name in remote_names},
+        }
+        api.update.return_value = {
+            'id': 'g1', 'history': [{'version': 'v', 'committed_at': 't'}]}
+        with mock.patch.object(
+                manager, 'get_files',
+                return_value={'a.sublime-settings': {'content': '{}'}}), \
+                mock.patch.object(manager, 'user_file_exists',
+                                  return_value=file_exists), \
+                mock.patch.object(gist.Gist, 'from_settings', return_value=api), \
+                mock.patch.object(
+                    settings, 'get',
+                    side_effect=lambda k: 'g1' if k == 'gist_id' else 'tok'), \
+                mock.patch.object(version, 'get_local_version',
+                                  return_value={'hash': 'r', 'files': baseline}), \
+                mock.patch.object(version, 'update_config_file'):
+            self.cmd.upload()
+        return api.update.call_args.kwargs['data']['files']
+
+    def test_upload_deletes_remote_absent_files(self):
+        # A file this machine previously synced (present in the persisted
+        # baseline) but has since deleted from disk must be deleted (null).
+        sent = self._upload_with_baseline(
+            ['a.sublime-settings', 'b.sublime-settings'],
+            {'a.sublime-settings': 'ha', 'b.sublime-settings': 'hb'},
+            file_exists=False)
+        self.assertEqual(sent['a.sublime-settings'], {'content': '{}'})
+        self.assertIsNone(sent['b.sublime-settings'])
+
+    def test_upload_keeps_unknown_remote_files(self):
+        # Regression (cross-machine data loss): a remote file this machine has
+        # never synced (absent from its baseline — a fresh install or an Upload
+        # before the first Download) must NOT be deleted, even though it is
+        # missing on this machine's disk.
+        sent = self._upload_with_baseline(
+            ['a.sublime-settings', 'other-machine.sublime-settings'],
+            {'a.sublime-settings': 'ha'},
+            file_exists=False)
+        self.assertNotIn('other-machine.sublime-settings', sent)
+
+    def test_upload_without_baseline_deletes_nothing(self):
+        # No persisted baseline (manual-only user, or a freshly configured
+        # gist_id): deletions cannot be attributed to this machine, so the
+        # gist must only be appended to — nothing is nulled.
+        sent = self._upload_with_baseline(
+            ['a.sublime-settings', 'b.sublime-settings'], {}, file_exists=False)
+        self.assertNotIn('b.sublime-settings', sent)
+
+    def test_upload_keeps_filtered_remote_files(self):
+        # A remote file that exists locally but is excluded from the upload set
+        # (e.g. filtered out) must NOT be deleted from the gist.
+        sent = self._upload_with_baseline(
+            ['a.sublime-settings', 'c.sublime-settings'],
+            {'a.sublime-settings': 'ha', 'c.sublime-settings': 'hc'},
+            file_exists=True)
+        self.assertNotIn('c.sublime-settings', sent)
 
 
 if __name__ == '__main__':

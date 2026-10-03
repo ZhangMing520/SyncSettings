@@ -89,6 +89,7 @@ By default, this plugin operates over [Sublime Text](https://www.sublimetext.com
 | `gist_id`  | `string` | Identifier of your backup on [gist.github.com](https://gist.github.com). |
 | `auto_upgrade`  | `boolean` | If `true`, settings are kept in sync with the gist automatically: Sublime pulls the latest gist on startup, and a background loop both pulls remote changes and pushes local changes (upload-on-change) on a timer. The sync is a three-way merge (only changed files move each way), and a file edited on two machines at once is reported as a conflict — the local copy is backed up to `~/.sync_settings_reborn/conflicts/<timestamp>/` and the gist version wins, so nothing is silently lost. Requires `access_token` (and a `gist_id` for pulls; pushes create one if missing). Default `false`. |
 | `auto_sync_interval`  | `number` | Background auto-sync poll interval in **minutes**, used only when `auto_upgrade` is `true`. Default `5`. |
+| `max_file_size`  | `number` | Maximum file size in **bytes** that is uploaded to the gist. GitHub's gist REST API returns at most ~1 MiB of content per file and truncates larger files (`truncated: true`), so any file above this limit can never be restored intact and is skipped on upload with a warning. The offline zip export is **not** affected. Default `1048576` (1 MiB). |
 | `http_proxy`  | `string` | An HTTP proxy server to use for requests. |
 | `https_proxy`  | `string` | An HTTPS proxy server to use for requests. |
 | `excluded_files`  | `[]string` | In simple words, this option is a black list. Which means, every file that match with the defined pattern, will be ignored on sync. |
@@ -101,6 +102,8 @@ By default, this plugin operates over [Sublime Text](https://www.sublimetext.com
 | `online_sync_folder`  | `string` | Folder (typically a cloud-synced directory like Dropbox / Google Drive) used by the `Sync Online` commands to read/write the settings zip. Empty until you run `Sync Online - Define Folder`. |
 
 > Note: `excluded_files` and `included_files` are patterns defined as [unix shell style](https://tldp.org/LDP/GNU-Linux-Tools-Summary/html/x11655.htm).
+
+> **Gist size limit:** GitHub's gist REST API returns at most ~1 MiB of content per file and marks larger files `truncated: true` (only partial content is returned). Files above `max_file_size` are therefore skipped on upload (with a warning) because they could never be restored intact; files already on the gist that exceed the limit are likewise skipped on download. This only affects the gist (cloud) path — the offline zip backup is unlimited.
 
 
 ## Commands

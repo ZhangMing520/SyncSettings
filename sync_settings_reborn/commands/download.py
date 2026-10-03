@@ -18,16 +18,6 @@ from ..thread_progress import ThreadProgress
 class SyncSettingsRebornDownloadCommand(sublime_plugin.WindowCommand):
     temp_folder = path.join(os.path.expanduser('~'), '.sync_settings_reborn', 'temp')
 
-    def _install_missing_packages(self, remote_packages):
-        try:
-            local_packages = manager.local_installed_packages()
-            missing = set(remote_packages).difference(local_packages)
-            if missing:
-                self.window.run_command('advanced_install_package', {'packages': sorted(missing)})
-        except Exception as e:
-            logger.warning('skipping package installation')
-            logger.exception(e)
-
     def on_done(self, g):
         manager.move_files(self.temp_folder)
         try:
@@ -69,9 +59,9 @@ class SyncSettingsRebornDownloadCommand(sublime_plugin.WindowCommand):
             self.on_done(g)
 
             # Best-effort: install any packages present remotely but missing
-            # locally. Wrapped so a failure here can never block the file
-            # restore above.
-            self._install_missing_packages(remote_packages)
+            # locally (shared helper, same path auto-sync uses). Wrapped so a
+            # failure here can never block the file restore above.
+            manager.install_missing_packages(remote_packages)
         except Exception as e:
             decorators.report_error(self, e)
 

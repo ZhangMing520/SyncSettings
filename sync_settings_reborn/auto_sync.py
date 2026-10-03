@@ -489,6 +489,14 @@ class AutoSync:
         if pull_deleted:
             manager.delete_user_files(sorted(pull_deleted))
 
+        # Best-effort: bring this machine's plugin set in line with the remote
+        # one, so a sync on a fresh machine converges without a manual Download.
+        pc_key = path.encode('Package Control.sublime-settings')
+        pc_content = remote_files.get(pc_key)
+        if pc_key in pull_present and pc_content:
+            manager.install_missing_packages(
+                manager.installed_packages_from_content(pc_content))
+
         # Re-collect AFTER writing: write_user_files may merge content
         # (Package Control installed_packages union), and the push must carry
         # that merged result, not a stale pre-pull copy.

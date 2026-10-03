@@ -501,3 +501,48 @@ class WriteUserFilesRestoreTest(unittest.TestCase):
     def test_clean_file_written(self):
         manager.write_user_files({'Preferences.sublime-settings': b'{"x": 1}'}, preserve_packages=True)
         self.assertTrue(os.path.exists(os.path.join(self.user, 'Preferences.sublime-settings')))
+
+
+class TestInstallMissingPackages(unittest.TestCase):
+    @mock.patch('sync_settings_reborn.sync_manager.sublime.active_window')
+    def test_installs_only_missing(self, active_mock):
+        window = mock.MagicMock()
+        active_mock.return_value = window
+        with mock.patch.object(manager, 'local_installed_packages',
+                               return_value=['A', 'B']):
+            manager.install_missing_packages(['A', 'B', 'C'])
+        window.run_command.assert_called_once_with(
+            'advanced_install_package', {'packages': ['C']})
+
+    @mock.patch('sync_settings_reborn.sync_manager.sublime.active_window',
+                return_value=None)
+    def test_no_window_is_safe(self, active_mock):
+        # Must not raise when there is no active window.
+        manager.install_missing_packages(['X'])
+        active_mock.assert_called_once()
+
+    def test_no_missing_is_noop(self):
+        with mock.patch.object(manager, 'local_installed_packages',
+                               return_value=['A', 'B', 'C']):
+            # active_window is never consulted when nothing is missing.
+            manager.install_missing_packages(['A', 'B', 'C'])
+
+
+class TestMaxFileSize(unittest.TestCase):
+    @mock.patch('sync_settings_reborn.sync_manager.settings.get')
+    @mock.patch('sync_settings_reborn.sync_manager.get_content')
+    @mock.patch('sync_settings_reborn.sync_manager.iter_user_files')
+    def test_oversized_file_skipped_on_upload(self, iter_mock, content_mock, settings_mock):
+        settings_mock.side_effect = lambda k: {'max_file_size': 10}.get(k)
+        iter_mock.return_value = [
+            ('/tmp/User/small.sublime-settings', 'small.sublime-settings'),
+            ('/tmp/User/big.sublime-settings', 'big.sublime-settings'),
+        ]
+
+        def content_for(f):
+            return 'tiny' if f.endswith('small.sublime-settings') else 'x' * 100
+
+        content_mock.side_effect = content_for
+        files = manager.get_files()
+        self.assertIn('small.sublime-settings', files)
+        self.assertNotIn('big.sublime-settings', files)

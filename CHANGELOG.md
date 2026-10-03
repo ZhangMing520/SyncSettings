@@ -82,6 +82,24 @@
   `auto_sync.py`. `get_local_version` / `update_config_file` are kept (still used
   to record the last-synced gist revision).
 
+- **`Upload` now propagates local deletions to the Gist.** GitHub's gist PATCH
+  is a merge: files absent from the payload are kept on the Gist, so deleting a
+  config locally used to leave a stale copy in the Gist. `Upload` now fetches the
+  current Gist file list and sends `null` for any remote file that is genuinely
+  gone from disk (filtered-out files that still exist locally are left untouched,
+  so only real deletions propagate).
+- **Auto-pull installs missing packages.** After an auto-sync pull, packages
+  present on the Gist but missing locally are best-effort installed via Package
+  Control's `advanced_install_package` command (wrapped so a failure can never
+  block the file restore). A fresh machine now converges to the same plugin set
+  without a manual `Download`.
+- **Skip oversized files on upload (`max_file_size`, default 1 MiB).** GitHub's
+  gist REST API returns at most ~1 MiB of content per file and truncates larger
+  ones (`truncated: true`), so a bigger file can never be restored intact.
+  Files above `max_file_size` are skipped on upload with a warning; files already
+  in the Gist that exceed it are skipped on download. The offline zip export is
+  unaffected. Documented in the Options table and README.
+
 ## v4.1.0 — PackageSync-style sync
 
 Added sync capabilities alongside the existing GitHub Gist backend:
