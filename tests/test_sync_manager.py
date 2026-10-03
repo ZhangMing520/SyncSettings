@@ -111,6 +111,12 @@ class TestSyncManager(unittest.TestCase):
     def test_get_content_with_exception(self):
         self.assertEqual(manager.get_content('file.error'), '')
 
+    def test_get_content_skips_binary_file(self):
+        # A non-UTF-8 file must be skipped (return ''), not uploaded corrupted.
+        create_file('binary.bin', content=b'\x86\x00\x87', mode='wb')
+        self.assertEqual(manager.get_content('binary.bin'), '')
+        delete_file('binary.bin')
+
 
 def _settings_side_effect(ignore_dirs, excluded_files=None):
     table = {'ignore_dirs': ignore_dirs, 'excluded_files': excluded_files}

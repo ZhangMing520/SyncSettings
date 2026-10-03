@@ -12,7 +12,7 @@ from ..thread_progress import ThreadProgress
 
 
 class SyncSettingsRebornUploadCommand(sublime_plugin.WindowCommand):
-    def _remote_state(self, gist_api, gid, files):
+    def _remote_names_and_deletions(self, gist_api, gid, files):
         """Return ``(name_map, removable)`` for the existing gist.
 
         ``name_map`` groups each canonical internal key with the real
@@ -55,7 +55,8 @@ class SyncSettingsRebornUploadCommand(sublime_plugin.WindowCommand):
                 # on the gist. The listing maps real remote names (foreign
                 # tools keep literal separators) to our canonical keys, and
                 # resolves this machine's eligible deletions.
-                name_map, removable = self._remote_state(gist_api, gid, files)
+                name_map, removable = self._remote_names_and_deletions(
+                    gist_api, gid, files)
                 payload, _ = auto_sync._build_payload(
                     set(files) | removable, files,
                     auto_sync._content_hashes(files), {}, name_map)

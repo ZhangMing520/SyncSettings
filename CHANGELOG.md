@@ -93,6 +93,41 @@
   Control's `advanced_install_package` command (wrapped so a failure can never
   block the file restore). A fresh machine now converges to the same plugin set
   without a manual `Download`.
+- **Auto-sync fetches content via `raw_url`, not the API inline field.** GitHub's
+  REST API truncates a file's inline `content` past ~1 MiB (`truncated: true`) and
+  omits it for files pushed through git, so the background merge could never pull
+  large or git-imported files. It now downloads each file's `raw_url` (the same
+  path the manual `Download` command already used), so files of any size restore
+  intact. The gist listing is still taken from the API for the file map and
+  revision check.
+- **Manual `Download` honours the configured proxy.** `fetch_files` now passes
+  the proxy from `Gist.from_settings().proxies` when fetching raw file bytes,
+  matching the gist API client and auto-sync (previously only the listing used
+  the proxy while the file bytes ignored it).
+- **Canonical file keys for nested / special-character names.** Gist filenames
+  are mapped through `path.encode(path.decode(name))` in auto-sync, manual
+  `Download`, and the manual-Download baseline, so a file created by another tool
+  with a literal path separator (e.g. `sub/C.sublime-settings`) matches this
+  plugin's percent-encoded key space (`sub%2FC.sublime-settings`) instead of
+  being re-pulled every cycle.
+- **Gists from other tools converge instead of forking twins.** Writes (auto-sync
+  and `Upload`) now map every gist file to its canonical internal key via a shared
+  `name_map`. A file stored under a foreign name is renamed in place (the gist
+  rename API), and any leftover duplicate copy is removed (`null`); a local
+  deletion nulls every real remote name the gist carries. So an externally created
+  gist re-baselines correctly after the next push instead of accumulating twin
+  files.
+- **Bounded per-key retry for content that cannot be fetched.** A merge records
+  keys whose `raw_url` could not be fetched (network error / non-200) and, on an
+  unchanged-revision idle poll, re-requests only those `raw_url`s (bounded by
+  `PENDING_MAX_ATTEMPTS = 5`) instead of re-downloading the whole gist. A
+  permanently failing key is dropped with a loud error while keeping its last
+  synced baseline — it is never mistaken for a remote deletion; a new gist
+  revision rearms the retry budget. The pending set is persisted in `sync.json`.
+- **Files are no longer uploaded corrupted.** `get_content` used `decode('utf-8',
+  errors='ignore')`, which silently dropped bytes from a non-UTF-8 file and
+  pushed the damaged copy to every machine. It now decodes strictly and skips
+  (with a warning) any file that is not valid UTF-8, like token files.
 
 ## v4.1.0 — PackageSync-style sync
 

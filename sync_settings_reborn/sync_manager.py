@@ -22,9 +22,13 @@ def get_content(file):
         return ''
     try:
         with open(file, 'rb') as fi:
-            # TODO: Figure how to solve these kind of errors (for now ignore it)
-            #  `UnicodeDecodeError: 'utf-8' codec can't decode byte 0x86 in position 23: invalid start byte`
-            return fi.read().decode('utf-8', errors='ignore')
+            # Strict UTF-8: Sublime config files are text, and swallowing
+            # decode errors with errors='ignore' would silently corrupt a
+            # binary/non-UTF-8 file and upload the damaged bytes. Skip it
+            # instead (it is then absent from the sync, like a token file).
+            return fi.read().decode('utf-8')
+    except UnicodeDecodeError:
+        logger.warning('skipping non-UTF-8 file (not uploaded): {}'.format(file))
     except Exception as e:
         logger.warning('file `{}` has errors'.format(file))
         logger.exception(e)

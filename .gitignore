@@ -23,4 +23,7 @@ venv/
 # Test caches
 .pytest_cache/
 
+# Local tooling ignore file (not part of the plugin)
+.zcodeignore
+
 pyproject.toml

@@ -142,7 +142,7 @@ class TestSyncOnce(unittest.TestCase):
         # The single gist listing reports the same revision; its body is ignored
         # and only the local delta is pushed. The last-seen revision is passed
         # in so the fetch skips per-file raw downloads entirely.
-        _fetch.assert_called_once_with('r1', require=None)
+        _fetch.assert_called_once_with('r1', only_keys=None)
         _push.assert_called_once()
         pushed = set(_push.call_args.args[0])
         self.assertEqual(pushed, {'B.sublime-settings'})
@@ -263,7 +263,7 @@ class TestSyncOnce(unittest.TestCase):
         self.assertEqual(self.svc._pending,
                          {'A.sublime-settings':
                           auto_sync.PENDING_MAX_ATTEMPTS - 1})
-        _fetch.assert_called_once_with('r1', require=None)
+        _fetch.assert_called_once_with('r1', only_keys=None)
 
     @mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists')
     @mock.patch('sync_settings_reborn.auto_sync._push')
@@ -384,10 +384,10 @@ class TestPendingRetries(unittest.TestCase):
         # recovered content was applied with no whole-gist re-download.
         self.assertEqual(self.fetch.call_args_list[0].args, ('r1',))
         self.assertEqual(self.fetch.call_args_list[0].kwargs,
-                         {'require': None})
+                         {'only_keys': None})
         self.assertEqual(self.fetch.call_args_list[1].args, ('r2',))
         self.assertEqual(self.fetch.call_args_list[1].kwargs,
-                         {'require': {self.KEY}})
+                         {'only_keys': {self.KEY}})
         self.write.assert_called_once_with({self.KEY: 'z'},
                                            preserve_packages=True)
         self.assertEqual(self.svc._pending, {})
@@ -412,7 +412,7 @@ class TestPendingRetries(unittest.TestCase):
         self.svc._sync_once()
         self.assertEqual(self.fetch.call_args_list[-1].args, ('r2',))
         self.assertEqual(self.fetch.call_args_list[-1].kwargs,
-                         {'require': None})
+                         {'only_keys': None})
         self.assertEqual(self.svc._last_seen_remote, 'r2')
         # The last-known baseline copy is retained (never a deletion).
         self.assertEqual(self.svc._last_synced[self.KEY], _h('x'))
@@ -501,7 +501,7 @@ class TestMissingGist(unittest.TestCase):
         self.svc._sync_once()
         self.assertEqual(self.dialog.call_count, 1)
         # Sync really paused: the dead gist is not polled on the second cycle.
-        fetch.assert_called_once_with(None, require=None)
+        fetch.assert_called_once_with(None, only_keys=None)
         self.assertEqual(self.svc._missing_gist, 'g1')
 
     @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
@@ -642,7 +642,7 @@ class TestFetchRemote(unittest.TestCase):
                         return_value=client), \
                 mock.patch('sync_settings_reborn.auto_sync.requests.get',
                            side_effect=http) as get_req:
-            return auto_sync._fetch_remote(last_rev, require=require), get_req
+            return auto_sync._fetch_remote(last_rev, only_keys=require), get_req
 
     def test_fetches_remote_content_via_raw_url(self):
         responses = {'http://a': _resp(200, 'x'),
