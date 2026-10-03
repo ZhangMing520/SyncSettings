@@ -168,24 +168,44 @@ def _write_one(user_path, user_real, name, data):
         f.write(data)
 
 
+def _local_installed_packages():
+    """The package list Package Control currently has recorded locally."""
+    try:
+        local_settings = sublime.load_settings('Package Control.sublime-settings')
+        local_list = local_settings.get('installed_packages') or []
+        return local_list if isinstance(local_list, list) else []
+    except Exception:
+        return []
+
+
+def _installed_packages_from_content(content):
+    """Parse the `installed_packages` list out of Package Control settings content."""
+    if not content:
+        return []
+    try:
+        data = file.encode_json(content)
+    except Exception:
+        return []
+    if not isinstance(data, dict):
+        return []
+    pkgs = data.get('installed_packages') or []
+    return pkgs if isinstance(pkgs, list) else []
+
+
 def _merge_installed_packages(data):
     """Union the remote `installed_packages` with the local list so a restore
     never drops packages the user already has on this machine."""
     try:
-        remote = file.encode_json(data.decode('utf-8', errors='ignore'))
+        parsed = file.encode_json(data.decode('utf-8', errors='ignore'))
     except Exception:
         return data
-    if not isinstance(remote, dict):
+    if not isinstance(parsed, dict):
         return data
-    local_settings = sublime.load_settings('Package Control.sublime-settings')
-    local_list = local_settings.get('installed_packages') or []
-    remote_list = remote.get('installed_packages') or []
-    if not isinstance(local_list, list):
-        local_list = []
+    remote_list = parsed.get('installed_packages') or []
     if not isinstance(remote_list, list):
         remote_list = []
-    remote['installed_packages'] = sorted(set(remote_list) | set(local_list))
-    return json.dumps(remote, indent=4).encode('utf-8')
+    parsed['installed_packages'] = sorted(set(remote_list) | set(_local_installed_packages()))
+    return json.dumps(parsed, indent=4).encode('utf-8')
 
 
 def write_user_files(files, preserve_packages=True):

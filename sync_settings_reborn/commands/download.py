@@ -8,7 +8,7 @@ import sublime_plugin
 
 from . import decorators
 from .. import sync_version as version, sync_manager as manager
-from ..libs import settings, path, file
+from ..libs import settings, path
 from ..libs.gist import Gist
 from ..libs.logger import logger
 
@@ -18,30 +18,15 @@ from ..thread_progress import ThreadProgress
 class SyncSettingsRebornDownloadCommand(sublime_plugin.WindowCommand):
     temp_folder = path.join(os.path.expanduser('~'), '.sync_settings_reborn', 'temp')
 
-    def _local_installed_packages(self):
+    def _install_missing_packages(self, remote_packages):
         try:
-            local_settings = sublime.load_settings('Package Control.sublime-settings')
-            local_list = local_settings.get('installed_packages') or []
-            return local_list if isinstance(local_list, list) else []
-        except Exception:
-            return []
-
-    def _remote_installed_packages(self):
-        try:
-            file_content = manager.get_content(
-                path.join(self.temp_folder, path.encode('Package Control.sublime-settings'))
-            )
-            if not file_content:
-                return []
-            remote = file.encode_json(file_content)
-            if not isinstance(remote, dict):
-                return []
-            remote_list = remote.get('installed_packages') or []
-            return remote_list if isinstance(remote_list, list) else []
+            local_packages = manager.local_installed_packages()
+            missing = set(remote_packages).difference(local_packages)
+            if missing:
+                self.window.run_command('advanced_install_package', {'packages': list(missing)})
         except Exception as e:
-            logger.warning('could not read remote installed_packages')
+            logger.warning('skipping package installation')
             logger.exception(e)
-            return []
 
     def on_done(self, g):
         manager.move_files(self.temp_folder)
@@ -73,6 +58,13 @@ class SyncSettingsRebornDownloadCommand(sublime_plugin.WindowCommand):
 
             manager.fetch_files(files, self.temp_folder)
 
+            # Read the remote package list before on_done removes the temp dir.
+            remote_packages = manager.installed_packages_from_content(
+                manager.get_content(
+                    path.join(self.temp_folder, path.encode('Package Control.sublime-settings'))
+                )
+            )
+
             # Restore the user files first. This is the primary goal and must
             # always happen, independent of the package-install step below.
             self.on_done(g)
@@ -80,14 +72,7 @@ class SyncSettingsRebornDownloadCommand(sublime_plugin.WindowCommand):
             # Best-effort: install any packages present remotely but missing
             # locally. Wrapped so a failure here can never block the file
             # restore above.
-            try:
-                remote_list = self._remote_installed_packages()
-                diff = set(remote_list).difference(set(self._local_installed_packages()))
-                if len(diff) > 0:
-                    self.window.run_command('advanced_install_package', {'packages': list(diff)})
-            except Exception as e:
-                logger.warning('skipping package installation')
-                logger.exception(e)
+            self._install_missing_packages(remote_packages)
         except Exception as e:
             decorators.report_error(self, e)
 
