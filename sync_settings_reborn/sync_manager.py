@@ -118,8 +118,13 @@ def download_file(q):
                 with open(name, 'wb') as f:
                     r.raw.decode_content = True
                     shutil.copyfileobj(r.raw, f)
-        except:  # noqa: E722
-            pass
+            else:
+                logger.warning('download skipped (status {}): {}'.format(r.status_code, url))
+        except Exception as e:
+            # Never swallow silently: a failed per-file download would leave an
+            # empty temp dir and the restore step would appear to "do nothing".
+            logger.warning('download failed: {}'.format(url))
+            logger.exception(e)
         finally:
             q.task_done()
 

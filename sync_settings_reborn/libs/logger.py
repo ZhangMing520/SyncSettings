@@ -5,7 +5,9 @@ import os
 from os import path
 
 log_dir = path.join(path.expanduser('~'), '.sync_settings_reborn')
-log_file = path.join(log_dir, 'sync.log')
+# Allow overriding the log location (used by the test suite so it doesn't
+# clobber the real Sublime log at ~/.sync_settings_reborn/sync.log).
+log_file = os.environ.get('SYNC_SETTINGS_REBORN_LOG_FILE', path.join(log_dir, 'sync.log'))
 
 # Make sure the directory exists so the file handler can be created even if the
 # plugin host hasn't created it yet.

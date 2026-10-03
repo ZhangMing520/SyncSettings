@@ -12,6 +12,15 @@ itself.
 
 import sys
 import types
+import os
+import tempfile
+
+# Redirect the plugin's log to a temp file so running the suite doesn't
+# overwrite the real Sublime log at ~/.sync_settings_reborn/sync.log. The
+# logger honours this env var at import time.
+os.environ['SYNC_SETTINGS_REBORN_LOG_FILE'] = os.path.join(
+    tempfile.gettempdir(), 'sync_settings_reborn_test.log'
+)
 
 
 sublime = types.ModuleType('sublime')
