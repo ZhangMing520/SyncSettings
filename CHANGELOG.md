@@ -93,12 +93,6 @@
   Control's `advanced_install_package` command (wrapped so a failure can never
   block the file restore). A fresh machine now converges to the same plugin set
   without a manual `Download`.
-- **Skip oversized files on upload (`max_file_size`, default 1 MiB).** GitHub's
-  gist REST API returns at most ~1 MiB of content per file and truncates larger
-  ones (`truncated: true`), so a bigger file can never be restored intact.
-  Files above `max_file_size` are skipped on upload with a warning; files already
-  in the Gist that exceed it are skipped on download. The offline zip export is
-  unaffected. Documented in the Options table and README.
 
 ## v4.1.0 — PackageSync-style sync
 

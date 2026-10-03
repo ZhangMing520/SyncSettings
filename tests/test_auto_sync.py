@@ -6,6 +6,8 @@ import tempfile
 import unittest
 import mock
 
+import requests
+
 from sync_settings_reborn import auto_sync
 from sync_settings_reborn.libs.gist import NotFoundError
 
@@ -22,6 +24,12 @@ def _files(d):
     # Shape returned by manager.get_files(): {encoded: {'content':, 'path':}}
     return {k: {'content': v, 'path': os.path.join('/tmp/User', k)}
             for k, v in d.items()}
+
+
+def _resp(status_code=200, text=''):
+    r = mock.MagicMock(status_code=status_code)
+    r.text = text
+    return r
 
 
 class TestShouldAutoSync(unittest.TestCase):
@@ -131,9 +139,10 @@ class TestSyncOnce(unittest.TestCase):
                                          'B.sublime-settings': 'y'})
         self.svc._last_synced = {'A.sublime-settings': _h('x')}  # B is new locally
         self.svc._sync_once()
-        # The single gist fetch reports the same revision; its body is ignored
-        # and only the local delta is pushed.
-        _fetch.assert_called_once_with()
+        # The single gist listing reports the same revision; its body is ignored
+        # and only the local delta is pushed. The last-seen revision is passed
+        # in so the fetch skips per-file raw downloads entirely.
+        _fetch.assert_called_once_with('r1')
         _push.assert_called_once()
         pushed = set(_push.call_args.args[0])
         self.assertEqual(pushed, {'B.sublime-settings'})
@@ -236,9 +245,8 @@ class TestSyncOnce(unittest.TestCase):
     @mock.patch('sync_settings_reborn.auto_sync.manager.get_files')
     @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
                 return_value=None)
-    def test_truncated_remote_content_is_skipped_not_deleted(self, _snap, get_files,
-                                                             _fetch, write,
-                                                             _push, _exists):
+    def test_unavailable_remote_content_skipped_and_revision_not_adopted(
+            self, _snap, get_files, _fetch, write, _push, _exists):
         _patch_settings(gist_id='g1')
         get_files.return_value = _files({'A.sublime-settings': 'x'})
         self.svc._last_synced = {'A.sublime-settings': _h('x')}
@@ -248,6 +256,10 @@ class TestSyncOnce(unittest.TestCase):
         _push.assert_not_called()
         # Baseline kept so the pull is retried once the content is available.
         self.assertIn('A.sublime-settings', self.svc._last_synced)
+        # The new revision is deliberately NOT adopted: otherwise the unchanged
+        # gate would skip raw fetches on every later idle poll and the failed
+        # file would never be retried.
+        self.assertEqual(self.svc._last_seen_remote, 'r1')
 
     @mock.patch('sync_settings_reborn.auto_sync.manager.user_file_exists')
     @mock.patch('sync_settings_reborn.auto_sync._push')
@@ -336,7 +348,7 @@ class TestMissingGist(unittest.TestCase):
         self.svc._sync_once()
         self.assertEqual(self.dialog.call_count, 1)
         # Sync really paused: the dead gist is not polled on the second cycle.
-        fetch.assert_called_once_with()
+        fetch.assert_called_once_with(None)
         self.assertEqual(self.svc._missing_gist, 'g1')
 
     @mock.patch('sync_settings_reborn.auto_sync.manager.installed_packages_snapshot',
@@ -455,26 +467,126 @@ class TestOfflineEdits(unittest.TestCase):
 
 
 class TestFetchRemote(unittest.TestCase):
-    @mock.patch('sync_settings_reborn.auto_sync.settings.get', return_value='g1')
-    def test_normalises_raw_gist_file_objects(self, _get):
-        raw_gist = {
+    def _run_fetch(self, urls, http=None, last_rev=None, proxies=None):
+        """Common scaffolding: a listing at revision r2 carrying ``urls``
+        ({encoded_name: raw_url}), one Gist client, and a requests.get
+        stand-in (``http`` may be a callable(url, **kw) or a fixed response).
+        Returns ``((rev, committed_at, files), get_mock)``.
+        """
+        client = mock.MagicMock()
+        client.get.return_value = {
             'history': [{'version': 'r2', 'committed_at': 't'}],
-            'files': {
-                'A.sublime-settings': {'content': 'x', 'truncated': False,
-                                       'raw_url': 'http://a'},
-                'Big.sublime-settings': {'content': '', 'truncated': True,
-                                         'raw_url': 'http://b'},
-            },
+            'files': {name: {'raw_url': url} for name, url in urls.items()},
         }
-        gist_mock = mock.MagicMock()
-        gist_mock.get.return_value = raw_gist
+        if proxies is not None:
+            client.proxies = proxies
+        settings_p = mock.patch(
+            'sync_settings_reborn.auto_sync.settings.get', return_value='g1')
+        settings_p.start()
+        self.addCleanup(settings_p.stop)
         with mock.patch('sync_settings_reborn.auto_sync.Gist.from_settings',
-                        return_value=gist_mock):
-            rev, committed_at, files = auto_sync._fetch_remote()
+                        return_value=client), \
+                mock.patch('sync_settings_reborn.auto_sync.requests.get',
+                           side_effect=http) as get_req:
+            return auto_sync._fetch_remote(last_rev), get_req
+
+    def test_fetches_remote_content_via_raw_url(self):
+        responses = {'http://a': _resp(200, 'x'),
+                     'http://b': _resp(200, 'big-content')}
+        # The listing's inline content field is ignored; bytes come from
+        # raw_url (including files the inline field would truncate/omit).
+        (rev, _, files), _ = self._run_fetch(
+            {'A.sublime-settings': 'http://a',
+             'Big.sublime-settings': 'http://b'},
+            http=lambda url, **kw: responses[url])
         self.assertEqual(rev, 'r2')
-        self.assertEqual(files['A.sublime-settings'], 'x')
-        # Truncated: key kept (file exists) but content unavailable.
-        self.assertIsNone(files['Big.sublime-settings'])
+        self.assertEqual(files, {'A.sublime-settings': 'x',
+                                 'Big.sublime-settings': 'big-content'})
+
+    def test_raw_fetch_failure_is_skipped_not_deleted(self):
+        def _boom(url, **kw):
+            raise requests.exceptions.RequestException('boom')
+
+        (rev, _, files), _ = self._run_fetch(
+            {'A.sublime-settings': 'http://a'}, http=_boom)
+        self.assertEqual(rev, 'r2')
+        # Fetch failed: key kept (file exists) but content unavailable.
+        self.assertIsNone(files['A.sublime-settings'])
+
+    def test_non_200_raw_fetch_is_none_and_logged(self):
+        (_, _, files), _ = self._run_fetch(
+            {'A.sublime-settings': 'http://a'}, http=_resp(429))
+        self.assertIsNone(files['A.sublime-settings'])
+
+    def test_unchanged_revision_skips_all_raw_fetches(self):
+        # Regression: an idle poll whose gist revision matches the last one
+        # observed must not re-download any file bytes via raw_url.
+        (rev, _, files), get_req = self._run_fetch(
+            {'A.sublime-settings': 'http://a',
+             'Big.sublime-settings': 'http://b'}, last_rev='r2')
+        self.assertEqual(rev, 'r2')
+        self.assertEqual(files, {})
+        # Only the one listing call happened; zero per-file raw downloads.
+        get_req.assert_not_called()
+
+    def test_changed_revision_uses_gist_client_proxies(self):
+        _, get_req = self._run_fetch(
+            {'A.sublime-settings': 'http://a'},
+            http=lambda url, **kw: _resp(200, 'x'), last_rev='r1',
+            proxies={'https': 'http://proxy:3128'})
+        self.assertEqual(get_req.call_args.kwargs['proxies'],
+                         {'https': 'http://proxy:3128'})
+
+
+class _TempUserDirCase(unittest.TestCase):
+    """Temporary Packages/User tree with packages_path() pointed at it."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.user = os.path.join(self.tmp, 'User')
+        os.makedirs(self.user)
+        self.patcher = mock.patch.object(
+            auto_sync.manager.sublime, 'packages_path',
+            lambda: self.tmp)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write(self, rel, content='{}'):
+        target = os.path.join(self.user, rel)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, 'w') as f:
+            f.write(content)
+
+
+class TestRestoredBaseline(_TempUserDirCase):
+    """adopt_manual_download must hash the locally restored bytes, never
+    re-download the gist (no per-file HTTP traffic on manual Download)."""
+
+    def test_hashes_restored_files_without_http(self):
+        self._write('A.sublime-settings', 'aaa')
+        g = {'files': {
+            'A.sublime-settings': {'raw_url': 'http://a'},
+            'B.sublime-settings': {'raw_url': 'http://b'},
+        }}
+        with mock.patch('sync_settings_reborn.auto_sync.requests.get') as get_req:
+            baseline = auto_sync._restored_baseline(g)
+        get_req.assert_not_called()
+        self.assertEqual(baseline, {'A.sublime-settings': auto_sync._sha('aaa')})
+
+    def test_subdirectory_and_empty_files(self):
+        self._write(os.path.join('sub', 'C.sublime-settings'), 'ccc')
+        self._write('Empty.sublime-settings', '')
+        g = {'files': {
+            # quote-encoded key, as the gist API uses it.
+            'sub%2FC.sublime-settings': {'raw_url': 'http://c'},
+            'Empty.sublime-settings': {'raw_url': 'http://e'},
+        }}
+        baseline = auto_sync._restored_baseline(g)
+        self.assertEqual(baseline,
+                         {'sub%2FC.sublime-settings': auto_sync._sha('ccc')})
 
 
 class TestStatePersistence(unittest.TestCase):
@@ -517,20 +629,7 @@ class TestStartStop(unittest.TestCase):
             svc.stop()
 
 
-class TestUserFileGuards(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.mkdtemp()
-        self.user = os.path.join(self.tmp, 'User')
-        os.makedirs(self.user)
-        self.patcher = mock.patch.object(
-            auto_sync.manager.sublime, 'packages_path',
-            lambda: self.tmp)
-        self.patcher.start()
-
-    def tearDown(self):
-        self.patcher.stop()
-        shutil.rmtree(self.tmp, ignore_errors=True)
-
+class TestUserFileGuards(_TempUserDirCase):
     def test_exists_detects_real_file(self):
         name = 'A.sublime-settings'
         with open(os.path.join(self.user, name), 'w') as f:

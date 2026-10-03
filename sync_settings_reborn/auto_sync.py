@@ -26,10 +26,11 @@ import os
 import threading
 import time
 
+import requests
 import sublime
 
 from .libs import settings, path
-from .libs.gist import Gist, NotFoundError
+from .libs.gist import Gist, NotFoundError, REQUEST_TIMEOUT
 from .libs.logger import logger
 from . import sync_version as version, sync_manager as manager
 
@@ -138,19 +139,42 @@ def _head_commit(g):
     return commit.get('version'), commit.get('committed_at')
 
 
-def _normalise_gist_files(g):
-    """Map GitHub's gist payload to ``{encoded_name: content}``.
+def _normalise_gist_files(g, proxies=None):
+    """Map a gist payload to ``{encoded_name: content}`` via each file's
+    ``raw_url``.
 
-    A value of None means the file exists remotely but its content is not
-    present in the listing (GitHub truncates large files); callers then skip
-    it rather than treating it as a deletion.
+    We deliberately never read the API's inline ``content`` field: GitHub
+    truncates it for files larger than ~1MB (``truncated: true``) and omits it
+    entirely for files pushed via git, so relying on it would make auto-sync
+    silently skip both kinds of file. ``raw_url`` always returns the complete,
+    authoritative bytes (verified for a 6.28 MB file). ``proxies`` comes from
+    the same validated ``Gist`` client used for the listing, so manual
+    Download and auto-sync share one proxy configuration.
+
+    A value of None means the remote file exists but its content could not be
+    fetched this cycle (network error or non-200); callers then skip it rather
+    than treating it as a deletion, so the pull is retried once the content is
+    available.
     """
     files = {}
     for name, meta in (g.get('files') or {}).items():
-        if not isinstance(meta, dict):
-            continue
-        content = meta.get('content')
-        files[name] = content if content and not meta.get('truncated') else None
+        content = None
+        raw_url = meta.get('raw_url') if isinstance(meta, dict) else None
+        if raw_url:
+            try:
+                r = requests.get(raw_url, proxies=proxies,
+                                 timeout=REQUEST_TIMEOUT)
+            except Exception as e:
+                logger.warning('auto-sync could not fetch raw file: {}'.format(raw_url))
+                logger.exception(e)
+            else:
+                if r.status_code == 200:
+                    content = r.text
+                else:
+                    logger.warning(
+                        'auto-sync raw fetch returned status {}: {}'.format(
+                            r.status_code, raw_url))
+        files[name] = content
     return files
 
 
@@ -172,23 +196,30 @@ def _build_payload(keys, current, hashes, baseline):
     return payload, new_baseline
 
 
-def _fetch_remote():
+def _fetch_remote(last_rev=None):
     """Fetch the gist once and return
     ``(revision_id, committed_at, {encoded_name: content})``.
 
+    When the listing's current revision equals ``last_rev``, the per-file
+    ``raw_url`` downloads are skipped and the content map comes back empty:
+    the caller only needs that revision for its unchanged-remote pre-check,
+    and fetching every file's full bytes on an idle poll would re-download the
+    whole gist for nothing. Callers that genuinely need content (a changed
+    revision, or an adoption path) pass no/another revision.
+
     Returns ``(None, None, {})`` on a transient failure (retry next cycle);
     raises NotFoundError on a deleted gist so the caller can surface it once.
-    Fetching the full gist every cycle doubles as the "did the remote move?"
-    pre-check — settings gists are small, and it avoids a second round trip
-    and a second timeout window when the gist changed.
     """
     gid = settings.get('gist_id')
     if not gid:
         return None, None, {}
     try:
-        g = Gist.from_settings().get(gid)
+        api = Gist.from_settings()
+        g = api.get(gid)
         rev, committed_at = _head_commit(g)
-        return rev, committed_at, _normalise_gist_files(g)
+        if last_rev is not None and rev == last_rev:
+            return rev, committed_at, {}
+        return rev, committed_at, _normalise_gist_files(g, api.proxies)
     except NotFoundError:
         raise
     except Exception as e:
@@ -392,7 +423,7 @@ class AutoSync:
             self._initial_push()
             return
         try:
-            rev, committed_at, remote_files = _fetch_remote()
+            rev, committed_at, remote_files = _fetch_remote(self._last_seen_remote)
         except NotFoundError:
             self._warn_missing_gist(gid)
             return
@@ -445,11 +476,13 @@ class AutoSync:
         self._persist_state()
 
     def _merge(self, rev, committed_at, remote_files):
+        previous_rev = self._last_seen_remote
         installed = _snapshot_installed()
         current = _current_files(installed)
         current_hashes = _content_hashes(current)
-        # A present key with falsy content means the gist content is
-        # unavailable (truncated); such keys must not be treated as deletions.
+        # A present key with falsy content means the remote content could not
+        # be fetched this cycle (network error / non-200); such keys must not
+        # be treated as deletions.
         remote_hashes = {k: _sha(v) for k, v in remote_files.items() if v}
         last = dict(self._last_synced or {})
 
@@ -481,8 +514,9 @@ class AutoSync:
             else:
                 pull_unavailable.append(k)
         if pull_unavailable:
-            logger.warning('auto-sync skipped files whose gist content is '
-                           'unavailable (too large/truncated): {}'.format(
+            logger.warning('auto-sync skipped files whose remote content '
+                           'could not be fetched (network error or non-200; '
+                           'will retry next cycle): {}'.format(
                                ', '.join(sorted(pull_unavailable))))
         if pull_present:
             _apply_remote(remote_files, set(pull_present))
@@ -533,7 +567,12 @@ class AutoSync:
                 return
             self._record_push(g)
 
-        self._last_seen_remote = rev
+        # Keep the previous revision marker when some remote content was
+        # unavailable: otherwise the unchanged-revision gate in _fetch_remote
+        # would stop re-fetching content on every later idle poll, and the
+        # failed keys would never get another retry until an unrelated remote
+        # change appeared.
+        self._last_seen_remote = previous_rev if pull_unavailable else rev
         self._last_committed_at = committed_at
         self._last_synced = new_baseline
         self._persist_state()
@@ -571,11 +610,25 @@ def adopt_manual_upload(files, g):
     _adopt_gist(g, baseline, 'upload')
 
 
+def _restored_baseline(g):
+    """Hash the files a manual Download just restored into Packages/User.
+
+    Those bytes were already downloaded (``fetch_files``) and installed
+    (``move_files``) by the Download command, so the baseline is taken from a
+    local disk scan with zero extra HTTP traffic. The scan uses the same
+    collection/hash pipeline as the post-pull baseline in ``_merge``
+    (exclude/include, token and uninstalled-package filters included), so the
+    next background cycle stays quiet. Keys the gist does not carry are
+    irrelevant; keys filtered out locally are simply absent.
+    """
+    remote_keys = set(g.get('files') or {})
+    return {k: h for k, h in _current_hashes().items() if k in remote_keys}
+
+
 def adopt_manual_download(g):
     """Re-baseline auto-sync after a successful manual Download.
 
-    Files whose content is truncated in the gist listing are skipped; they
-    simply re-converge on the next background merge.
+    The baseline is hashed from the files just restored on disk (never
+    re-fetched over HTTP), covering files of any size the raw endpoint serves.
     """
-    baseline = {k: _sha(v) for k, v in _normalise_gist_files(g).items() if v}
-    _adopt_gist(g, baseline, 'download')
+    _adopt_gist(g, _restored_baseline(g), 'download')

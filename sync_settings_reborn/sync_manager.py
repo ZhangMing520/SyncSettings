@@ -240,7 +240,6 @@ def iter_user_files(installed=None):
 
 def get_files(installed=None):
     files_with_content = dict()
-    max_size = _max_file_size()
     for f, rel in iter_user_files(installed):
         content = get_content(f)
         if not content.strip():
@@ -248,32 +247,8 @@ def get_files(installed=None):
         if contains_github_token(content):
             logger.warning('skipping file that appears to contain a GitHub token: {}'.format(rel))
             continue
-        if len(content.encode('utf-8')) > max_size:
-            # GitHub's gist REST API returns at most ~1 MiB of content per file
-            # and marks larger files `truncated: true` (only partial content
-            # comes back). Uploading such a file is pointless — it can never be
-            # restored intact — so skip it and tell the user why.
-            logger.warning('skipping file larger than the gist API limit (%d bytes): %s',
-                           max_size, rel)
-            continue
         files_with_content[path.encode(rel)] = {'content': content, 'path': f}
     return files_with_content
-
-
-DEFAULT_MAX_FILE_SIZE = 1024 * 1024  # 1 MiB, the gist API's per-file read limit
-
-
-def _max_file_size():
-    """Configured upload cap in bytes (`max_file_size`), default 1 MiB.
-
-    Mirrors GitHub's gist REST API, which truncates files larger than ~1 MiB on
-    read. A non-positive or invalid setting falls back to the default.
-    """
-    try:
-        size = int(settings.get('max_file_size'))
-    except (TypeError, ValueError):
-        return DEFAULT_MAX_FILE_SIZE
-    return size if size > 0 else DEFAULT_MAX_FILE_SIZE
 
 
 def download_file(q):

@@ -526,23 +526,3 @@ class TestInstallMissingPackages(unittest.TestCase):
                                return_value=['A', 'B', 'C']):
             # active_window is never consulted when nothing is missing.
             manager.install_missing_packages(['A', 'B', 'C'])
-
-
-class TestMaxFileSize(unittest.TestCase):
-    @mock.patch('sync_settings_reborn.sync_manager.settings.get')
-    @mock.patch('sync_settings_reborn.sync_manager.get_content')
-    @mock.patch('sync_settings_reborn.sync_manager.iter_user_files')
-    def test_oversized_file_skipped_on_upload(self, iter_mock, content_mock, settings_mock):
-        settings_mock.side_effect = lambda k: {'max_file_size': 10}.get(k)
-        iter_mock.return_value = [
-            ('/tmp/User/small.sublime-settings', 'small.sublime-settings'),
-            ('/tmp/User/big.sublime-settings', 'big.sublime-settings'),
-        ]
-
-        def content_for(f):
-            return 'tiny' if f.endswith('small.sublime-settings') else 'x' * 100
-
-        content_mock.side_effect = content_for
-        files = manager.get_files()
-        self.assertIn('small.sublime-settings', files)
-        self.assertNotIn('big.sublime-settings', files)
