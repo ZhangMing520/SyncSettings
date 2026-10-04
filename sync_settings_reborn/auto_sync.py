@@ -400,6 +400,12 @@ class AutoSync:
         self._thread = None
         self._stop = threading.Event()
         self._interval = DEFAULT_INTERVAL_SECONDS
+        # Serialises the daemon cycle against a manual Upload/Download, which
+        # runs on a ThreadProgress worker and calls adopt(). Without it the two
+        # can interleave their read-modify-write of the sync state and persist a
+        # stale baseline over a fresh one. Only _run and adopt take it, so a
+        # plain Lock suffices.
+        self._lock = threading.Lock()
         # The snapshot we last synced (per-file content hashes). This is the
         # common ancestor used to compute local vs remote deltas, and it is
         # persisted to sync.json so offline edits survive a restart.
@@ -462,7 +468,8 @@ class AutoSync:
             return
         while not self._stop.is_set():
             try:
-                self._sync_once()
+                with self._lock:
+                    self._sync_once()
             except Exception as e:
                 logger.exception(e)
             if self._stop.wait(self._interval):
@@ -481,18 +488,19 @@ class AutoSync:
     def adopt(self, rev, committed_at, baseline, remote_names=None):
         """Adopt an externally established sync point (a manual Upload or
         Download command) so its files don't look like fresh deltas here."""
-        self._last_seen_remote = rev
-        self._last_committed_at = committed_at
-        self._last_synced = dict(baseline)
-        # A manual command just established a complete, consistent state:
-        # nothing is pending, and its gist response defines the real names.
-        self._pending = {}
-        self._remote_name_map = dict(remote_names or {})
-        self._missing_gist = None
-        try:
-            self._persist_state()
-        except Exception as e:
-            logger.warning('auto-sync could not persist adopted state: {}'.format(e))
+        with self._lock:
+            self._last_seen_remote = rev
+            self._last_committed_at = committed_at
+            self._last_synced = dict(baseline)
+            # A manual command just established a complete, consistent state:
+            # nothing is pending, and its gist response defines the real names.
+            self._pending = {}
+            self._remote_name_map = dict(remote_names or {})
+            self._missing_gist = None
+            try:
+                self._persist_state()
+            except Exception as e:
+                logger.warning('auto-sync could not persist adopted state: {}'.format(e))
 
     def _record_push(self, g):
         self._last_seen_remote, self._last_committed_at = _head_commit(g)
@@ -559,11 +567,12 @@ class AutoSync:
             logger.info('auto-sync push skipped: no files to upload')
             return
         current_hashes = _content_hashes(current)
-        # Every collected file goes into the brand-new gist; an empty baseline
-        # means there are no deletions to consider.
+        # A brand-new gist carries none of the foreign names we may have
+        # recorded for a previously 404'd gist, so pass an empty name map:
+        # plain canonical keys, never rename forms. (An empty baseline means
+        # there are no deletions to consider either.)
         payload, new_baseline = _build_payload(set(current), current,
-                                               current_hashes, {},
-                                               self._remote_name_map)
+                                               current_hashes, {}, {})
         g = _push(payload)
         if g is None:
             return

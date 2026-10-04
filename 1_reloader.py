@@ -14,7 +14,13 @@ bare_mod_prefix = mod_prefix
 # ST3 loads each package as a module, so it needs an extra prefix
 if sys.version_info >= (3,):
     mod_prefix = 'SyncSettingsReborn.' + mod_prefix
-    from imp import reload
+    # imp.reload was removed in Python 3.12; Sublime's embedded Python is
+    # already 3.14 on current builds, so prefer importlib and only fall back
+    # for very old hosts.
+    try:
+        from importlib import reload
+    except ImportError:
+        from imp import reload
 
 # When reloading the package, we also need to reload the base "sync_settings_reborn"
 # module in ST3. This flag indicates we should re-add the PC package path

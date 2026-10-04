@@ -296,10 +296,16 @@ def fetch_files(files, to=''):
         name = path.join(user_path, decoded_name)
         if not is_synced(name):
             continue
+        # A missing raw_url skips this file rather than aborting the whole
+        # download (gfile['raw_url'] here used to raise mid-loop).
+        raw_url = gfile.get('raw_url')
+        if not raw_url:
+            logger.warning('gist file `{}` has no raw_url; skipping'.format(k))
+            continue
         # Canonicalise the gist key into this plugin's internal key space so a
         # temp file written here decodes back to the same on-disk path whether
         # the gist was created by this plugin or an external tool.
-        rq.put((gfile['raw_url'], path.join(to, path.canonical(k)), proxies))
+        rq.put((raw_url, path.join(to, path.canonical(k)), proxies))
 
     threads = min(10, len(items))
     for i in range(threads):
@@ -369,7 +375,14 @@ def install_missing_packages(remote_packages):
         if window is None:
             logger.warning('no active window; skipping install of packages: {}'.format(names))
             return
-        window.run_command('advanced_install_package', {'packages': names})
+        # Dispatch on the main thread: this runs from a background worker (the
+        # auto-sync loop and the Download command thread), and running a window
+        # command from off the main thread is not the documented-safe path.
+        # Fire-and-forget keeps the best-effort, non-blocking contract.
+        sublime.set_timeout(
+            lambda w=window, n=names: w.run_command(
+                'advanced_install_package', {'packages': n}),
+            0)
         logger.info('requested install of missing packages: {}'.format(names))
     except Exception as e:
         logger.warning('skipping package installation')

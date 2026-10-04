@@ -587,3 +587,20 @@ class FetchFilesProxyAndCanonicalTest(unittest.TestCase):
         # decodes back to the same on-disk path this plugin would produce.
         self.assertTrue(os.path.exists(
             os.path.join(target, 'sub%2FC.sublime-settings')))
+
+    @mock.patch('sync_settings_reborn.sync_manager.requests.get')
+    @mock.patch('sync_settings_reborn.sync_manager.Gist')
+    def test_fetch_files_skips_missing_raw_url(self, Gist, get):
+        Gist.from_settings.return_value.proxies = {}
+        get.return_value = self._fake_resp()
+        target = os.path.join(self.tmp, 'temp')
+        # A gist entry missing raw_url (e.g. a truncated/deleted file) must be
+        # skipped, not raise mid-loop; a sibling with a raw_url still downloads.
+        manager.fetch_files({
+            'A.sublime-settings': {'raw_url': 'http://a'},
+            'B.sublime-settings': {},
+        }, to=target)
+        get.assert_called_once()
+        self.assertEqual(get.call_args.args[0], 'http://a')
+        self.assertFalse(os.path.exists(
+            os.path.join(target, 'B.sublime-settings')))
