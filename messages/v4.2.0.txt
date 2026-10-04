@@ -1,0 +1,36 @@
+SyncSettingsReborn v4.2.0
+
+This release redesigns the commands and hardens the sync engine.
+
+Command redesign
+
+- Upload is now create-or-update: with an empty gist_id it creates a new Gist
+  and saves the id; with a set gist_id it updates that Gist. No prompts.
+- Added a standalone Delete command (deletes the remote Gist and clears the
+  saved gist_id). Resetting is now Delete → Upload.
+- Never upload a GitHub token: any file carrying a token is skipped on upload,
+  not just this plugin's settings file. Restore no longer token-filters.
+- Backup Package List now writes a separate -packages file so it can't overwrite
+  a full zip backup.
+
+Auto-sync (auto_upgrade)
+
+- A background daemon keeps the Gist mirror in sync on a timer via a three-way
+  merge (only changed files move, conflicts backed up under
+  ~/.sync_settings_reborn/conflicts/<ts>/). Baseline persists in sync.json so
+  offline edits survive a restart. Requires access_token.
+
+Reliability fixes
+
+- Auto-sync and manual Download fetch file bytes via raw_url (the API truncates
+  large / git-pushed files), so large files restore intact.
+- Manual Download now honours the configured http_proxy / https_proxy.
+- Nested / special-character names are canonicalised so foreign gists converge
+  instead of forking twin files.
+- Files are no longer uploaded corrupted: non-UTF-8 files are skipped, not
+  byte-dropped.
+- Background thread safety and atomic sync.json writes.
+
+Breaking default: skip_uninstalled_packages now defaults to true (any top-level
+User/ subfolder not matching an installed package is skipped). Set it to false
+if you keep personal folders (e.g. Snippets/) in User/.

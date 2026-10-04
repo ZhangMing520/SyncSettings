@@ -1,4 +1,4 @@
-## Unreleased — command redesign
+## v4.2.0 — command redesign and hardening
 
 - **`Upload` is now create-or-update.** When `gist_id` is empty it creates a new
   Gist and saves the id automatically; when `gist_id` is set it updates that
